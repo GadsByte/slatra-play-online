@@ -13,6 +13,10 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        display: ['Cinzel', 'serif'],
+        body: ['Crimson Text', 'serif'],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -47,6 +51,30 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        plague: {
+          DEFAULT: "hsl(var(--plague-order))",
+          light: "hsl(var(--plague-order-light))",
+          bg: "hsl(var(--plague-order-bg))",
+        },
+        bone: {
+          DEFAULT: "hsl(var(--bone-legion))",
+          light: "hsl(var(--bone-legion-light))",
+          bg: "hsl(var(--bone-legion-bg))",
+        },
+        hazard: {
+          DEFAULT: "hsl(var(--hazard))",
+          glow: "hsl(var(--hazard-glow))",
+        },
+        objective: "hsl(var(--objective))",
+        tile: {
+          dark: "hsl(var(--tile-dark))",
+          light: "hsl(var(--tile-light))",
+          hover: "hsl(var(--tile-hover))",
+          valid: "hsl(var(--tile-valid))",
+          attack: "hsl(var(--tile-attack))",
+        },
+        corpse: "hsl(var(--corpse))",
+        pinned: "hsl(var(--pinned))",
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
@@ -65,20 +93,12 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
         },
       },
       animation: {

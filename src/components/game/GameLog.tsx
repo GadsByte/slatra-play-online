@@ -1,16 +1,10 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 
 interface GameLogProps {
   log: string[];
 }
 
 export const GameLog: React.FC<GameLogProps> = ({ log }) => {
-  const endRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [log.length]);
-
   return (
     <div className="h-48 overflow-y-auto bg-card/50 border border-border rounded-sm p-2 text-xs font-body space-y-0.5">
       {log.map((entry, i) => (
@@ -28,7 +22,6 @@ export const GameLog: React.FC<GameLogProps> = ({ log }) => {
           {entry}
         </div>
       ))}
-      <div ref={endRef} />
     </div>
   );
 };

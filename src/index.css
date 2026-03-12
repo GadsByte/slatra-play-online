@@ -1,96 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
-
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 0 0% 8%;
+    --foreground: 40 10% 85%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 0 0% 11%;
+    --card-foreground: 40 10% 85%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 11%;
+    --popover-foreground: 40 10% 85%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 25 90% 50%;
+    --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 40 10% 85%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 0 0% 14%;
+    --muted-foreground: 40 5% 50%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 25 80% 45%;
+    --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --destructive: 0 70% 45%;
+    --destructive-foreground: 0 0% 100%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 0 0% 18%;
+    --input: 0 0% 18%;
+    --ring: 25 90% 50%;
 
-    --radius: 0.5rem;
+    --radius: 0.25rem;
 
-    --sidebar-background: 0 0% 98%;
+    /* Faction colors */
+    --plague-order: 100 40% 30%;
+    --plague-order-light: 100 35% 45%;
+    --plague-order-bg: 100 30% 12%;
 
-    --sidebar-foreground: 240 5.3% 26.1%;
+    --bone-legion: 30 15% 55%;
+    --bone-legion-light: 30 20% 70%;
+    --bone-legion-bg: 30 10% 14%;
 
-    --sidebar-primary: 240 5.9% 10%;
+    /* Game specific */
+    --hazard: 15 90% 45%;
+    --hazard-glow: 15 100% 55%;
+    --objective: 50 70% 45%;
+    --tile-dark: 0 0% 10%;
+    --tile-light: 0 0% 13%;
+    --tile-hover: 25 40% 20%;
+    --tile-valid: 120 50% 20%;
+    --tile-attack: 0 60% 25%;
+    --corpse: 280 20% 25%;
+    --pinned: 200 50% 35%;
 
-    --sidebar-primary-foreground: 0 0% 98%;
+    --font-display: 'Cinzel', serif;
+    --font-body: 'Crimson Text', serif;
 
-    --sidebar-accent: 240 4.8% 95.9%;
-
-    --sidebar-accent-foreground: 240 5.9% 10%;
-
-    --sidebar-border: 220 13% 91%;
-
-    --sidebar-ring: 217.2 91.2% 59.8%;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
-    --sidebar-background: 240 5.9% 10%;
-    --sidebar-foreground: 240 4.8% 95.9%;
-    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-background: 0 0% 8%;
+    --sidebar-foreground: 40 10% 85%;
+    --sidebar-primary: 25 90% 50%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 240 3.7% 15.9%;
-    --sidebar-accent-foreground: 240 4.8% 95.9%;
-    --sidebar-border: 240 3.7% 15.9%;
-    --sidebar-ring: 217.2 91.2% 59.8%;
+    --sidebar-accent: 0 0% 15%;
+    --sidebar-accent-foreground: 40 10% 85%;
+    --sidebar-border: 0 0% 18%;
+    --sidebar-ring: 25 90% 50%;
   }
 }
 
@@ -101,5 +78,47 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body);
   }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-display);
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: var(--font-display);
+  }
+  .font-body {
+    font-family: var(--font-body);
+  }
+}
+
+/* Tile glow animations */
+@keyframes ember-pulse {
+  0%, 100% { box-shadow: inset 0 0 8px hsl(15 90% 45% / 0.3); }
+  50% { box-shadow: inset 0 0 16px hsl(15 100% 55% / 0.5); }
+}
+
+@keyframes valid-pulse {
+  0%, 100% { box-shadow: inset 0 0 6px hsl(120 50% 30% / 0.3); }
+  50% { box-shadow: inset 0 0 12px hsl(120 50% 40% / 0.5); }
+}
+
+@keyframes attack-pulse {
+  0%, 100% { box-shadow: inset 0 0 6px hsl(0 60% 35% / 0.3); }
+  50% { box-shadow: inset 0 0 14px hsl(0 70% 45% / 0.6); }
+}
+
+.tile-hazard {
+  animation: ember-pulse 2s ease-in-out infinite;
+}
+
+.tile-valid-move {
+  animation: valid-pulse 1.5s ease-in-out infinite;
+}
+
+.tile-valid-attack {
+  animation: attack-pulse 1.2s ease-in-out infinite;
 }

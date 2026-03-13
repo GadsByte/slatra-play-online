@@ -22,6 +22,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<MainMenu />} />
           <Route path="/local" element={<Index />} />
+          <Route path="/rules" element={<Rules />} />
           <Route path="/multiplayer" element={<MultiplayerEntry />} />
           <Route path="/multiplayer/lobby" element={<MultiplayerLobby />} />
           <Route path="/multiplayer/room/:roomId" element={<MultiplayerRoom />} />

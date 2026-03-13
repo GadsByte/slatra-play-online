@@ -168,6 +168,7 @@ const MultiplayerLobby = () => {
               </div>
             </DialogContent>
           </Dialog>
+          </div>
         </div>
 
         {rooms.length === 0 && (

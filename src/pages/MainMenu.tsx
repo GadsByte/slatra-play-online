@@ -29,6 +29,14 @@ const MainMenu = () => {
         >
           MULTIPLAYER
         </Button>
+        <Button
+          size="lg"
+          variant="ghost"
+          onClick={() => navigate('/rules')}
+          className="font-display text-lg tracking-wider px-8 py-6 text-muted-foreground hover:text-foreground"
+        >
+          HOW TO PLAY
+        </Button>
       </div>
     </div>
   );

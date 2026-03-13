@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import MainMenu from "./pages/MainMenu.tsx";
 import Index from "./pages/Index.tsx";
+import Rules from "./pages/Rules.tsx";
 import MultiplayerEntry from "./pages/MultiplayerEntry.tsx";
 import MultiplayerLobby from "./pages/MultiplayerLobby.tsx";
 import MultiplayerRoom from "./pages/MultiplayerRoom.tsx";
@@ -21,6 +22,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<MainMenu />} />
           <Route path="/local" element={<Index />} />
+          <Route path="/rules" element={<Rules />} />
           <Route path="/multiplayer" element={<MultiplayerEntry />} />
           <Route path="/multiplayer/lobby" element={<MultiplayerLobby />} />
           <Route path="/multiplayer/room/:roomId" element={<MultiplayerRoom />} />

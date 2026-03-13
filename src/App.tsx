@@ -3,7 +3,11 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import MainMenu from "./pages/MainMenu.tsx";
 import Index from "./pages/Index.tsx";
+import MultiplayerEntry from "./pages/MultiplayerEntry.tsx";
+import MultiplayerLobby from "./pages/MultiplayerLobby.tsx";
+import MultiplayerRoom from "./pages/MultiplayerRoom.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -15,8 +19,11 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <Routes>
-          <Route path="/" element={<Index />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+          <Route path="/" element={<MainMenu />} />
+          <Route path="/local" element={<Index />} />
+          <Route path="/multiplayer" element={<MultiplayerEntry />} />
+          <Route path="/multiplayer/lobby" element={<MultiplayerLobby />} />
+          <Route path="/multiplayer/room/:roomId" element={<MultiplayerRoom />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

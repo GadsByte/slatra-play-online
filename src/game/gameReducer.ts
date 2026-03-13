@@ -22,7 +22,7 @@ export type GameAction =
 
 export function createInitialState(): GameState {
   return {
-    phase: 'title',
+    phase: 'hazard_placement',
     subPhase: 'select_unit',
     round: 0,
     currentPlayer: 'plague',

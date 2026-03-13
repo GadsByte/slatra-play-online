@@ -1,4 +1,5 @@
 import React, { useReducer, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GameBoard } from '@/components/game/GameBoard';
 import { UnitPanel } from '@/components/game/UnitPanel';
 import { ActionBar } from '@/components/game/ActionBar';
@@ -10,6 +11,7 @@ import { Position, posEqual, getValidMoves, getAdjacentEnemies } from '@/game/ty
 import { Button } from '@/components/ui/button';
 
 const SlatraGame: React.FC = () => {
+  const navigate = useNavigate();
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
 
   const activeUnitObj = useMemo(() => {
@@ -81,27 +83,6 @@ const SlatraGame: React.FC = () => {
     return '';
   };
 
-  // Title screen
-  if (state.phase === 'title') {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-8">
-        <div className="text-center space-y-4">
-          <h1 className="font-display text-6xl font-black tracking-widest text-foreground">SLATRA</h1>
-          <p className="font-display text-xl text-primary tracking-[0.3em]">SERVE · SUFFER · DIE</p>
-          <p className="text-muted-foreground font-body text-lg max-w-md mx-auto">
-            A tactical skirmish between the Plague Order and the Bone Legion. Two players. One board. No mercy.
-          </p>
-        </div>
-        <Button
-          size="lg"
-          onClick={() => dispatch({ type: 'START_GAME' })}
-          className="font-display text-lg tracking-wider px-8 py-6"
-        >
-          BEGIN THE SLAUGHTER
-        </Button>
-      </div>
-    );
-  }
 
   // Game over screen
   if (state.phase === 'game_over') {
@@ -116,8 +97,8 @@ const SlatraGame: React.FC = () => {
           <p className="font-display text-3xl text-muted-foreground">DRAW</p>
         )}
         <GameLog log={state.log} />
-        <Button size="lg" onClick={() => dispatch({ type: 'START_GAME' })} className="font-display tracking-wider">
-          PLAY AGAIN
+        <Button size="lg" onClick={() => navigate('/')} className="font-display tracking-wider">
+          BACK TO MENU
         </Button>
       </div>
     );

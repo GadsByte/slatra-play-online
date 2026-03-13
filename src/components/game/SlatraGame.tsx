@@ -11,6 +11,7 @@ import { Position, posEqual, getValidMoves, getAdjacentEnemies } from '@/game/ty
 import { Button } from '@/components/ui/button';
 
 const SlatraGame: React.FC = () => {
+  const navigate = useNavigate();
   const [state, dispatch] = useReducer(gameReducer, undefined, createInitialState);
 
   const activeUnitObj = useMemo(() => {

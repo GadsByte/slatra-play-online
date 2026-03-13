@@ -37,6 +37,14 @@ const MainMenu = () => {
         >
           HOW TO PLAY
         </Button>
+        <Button
+          size="lg"
+          variant="ghost"
+          asChild
+          className="font-display text-lg tracking-wider px-8 py-6 text-muted-foreground hover:text-foreground"
+        >
+          <a href="https://linktr.ee/mountslatra" target="_blank" rel="noopener noreferrer">MORE SLATRA</a>
+        </Button>
       </div>
     </div>
   );

@@ -97,8 +97,8 @@ const SlatraGame: React.FC = () => {
           <p className="font-display text-3xl text-muted-foreground">DRAW</p>
         )}
         <GameLog log={state.log} />
-        <Button size="lg" onClick={() => dispatch({ type: 'START_GAME' })} className="font-display tracking-wider">
-          PLAY AGAIN
+        <Button size="lg" onClick={() => navigate('/')} className="font-display tracking-wider">
+          BACK TO MENU
         </Button>
       </div>
     );

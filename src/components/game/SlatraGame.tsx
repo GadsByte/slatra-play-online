@@ -1,4 +1,5 @@
 import React, { useReducer, useCallback, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { GameBoard } from '@/components/game/GameBoard';
 import { UnitPanel } from '@/components/game/UnitPanel';
 import { ActionBar } from '@/components/game/ActionBar';

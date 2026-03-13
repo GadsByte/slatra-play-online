@@ -34,7 +34,8 @@ const MultiplayerLobby = () => {
   const [rooms, setRooms] = useState<MockRoom[]>(INITIAL_ROOMS);
   const [createOpen, setCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
-  const [newRoomPrivate, setNewRoomPrivate] = useState(false);
+  const [joinPrivateOpen, setJoinPrivateOpen] = useState(false);
+  const [privateCode, setPrivateCode] = useState('');
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);

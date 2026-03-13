@@ -108,10 +108,34 @@ const MultiplayerLobby = () => {
       <div className="w-full max-w-lg space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg tracking-wider text-foreground">ROOMS</h2>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="font-display tracking-wider">+ CREATE ROOM</Button>
-            </DialogTrigger>
+          <div className="flex items-center gap-2">
+            <Dialog open={joinPrivateOpen} onOpenChange={setJoinPrivateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" className="font-display tracking-wider text-xs border-primary/30 text-primary">ENTER CODE</Button>
+              </DialogTrigger>
+              <DialogContent className="bg-card border-border">
+                <DialogHeader>
+                  <DialogTitle className="font-display tracking-wider text-foreground">JOIN PRIVATE ROOM</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <Input
+                    placeholder="Room code"
+                    value={privateCode}
+                    onChange={(e) => setPrivateCode(e.target.value.toUpperCase())}
+                    onKeyDown={(e) => e.key === 'Enter' && handleJoinPrivate()}
+                    maxLength={12}
+                    className="font-display text-center text-lg tracking-[0.2em] bg-secondary border-border uppercase"
+                  />
+                  <Button onClick={handleJoinPrivate} disabled={!privateCode.trim()} className="w-full font-display tracking-wider">
+                    JOIN
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="font-display tracking-wider">+ CREATE ROOM</Button>
+              </DialogTrigger>
             <DialogContent className="bg-card border-border">
               <DialogHeader>
                 <DialogTitle className="font-display tracking-wider text-foreground">CREATE ROOM</DialogTitle>

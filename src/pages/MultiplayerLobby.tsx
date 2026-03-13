@@ -79,6 +79,14 @@ const MultiplayerLobby = () => {
     navigate(`/multiplayer/room/${roomId}`);
   };
 
+  const handleJoinPrivate = () => {
+    const trimmed = privateCode.trim();
+    if (!trimmed) return;
+    setJoinPrivateOpen(false);
+    setPrivateCode('');
+    navigate(`/multiplayer/room/${trimmed.toLowerCase()}`);
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8 gap-6">
       <h1 className="font-display text-4xl font-black tracking-widest text-foreground">LOBBY</h1>

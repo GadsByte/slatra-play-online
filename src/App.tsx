@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import MainMenu from "./pages/MainMenu.tsx";
 import Index from "./pages/Index.tsx";
+import Rules from "./pages/Rules.tsx";
 import MultiplayerEntry from "./pages/MultiplayerEntry.tsx";
 import MultiplayerLobby from "./pages/MultiplayerLobby.tsx";
 import MultiplayerRoom from "./pages/MultiplayerRoom.tsx";

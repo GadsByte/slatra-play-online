@@ -65,7 +65,7 @@ const SlatraGame: React.FC = () => {
   }, [state.phase, state.subPhase, state.activeUnit, state.currentPlayer, state.units, validMoves, validAttacks]);
 
   const handleSelectUnit = useCallback((id: string) => {
-    if (state.phase === 'playing' && state.subPhase === 'select_unit') {
+    if (state.phase === 'playing' && (state.subPhase === 'select_unit' || state.subPhase === 'unit_actions')) {
       dispatch({ type: 'SELECT_UNIT', unitId: id });
     }
   }, [state.phase, state.subPhase]);

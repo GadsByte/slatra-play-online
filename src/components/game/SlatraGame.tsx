@@ -45,6 +45,12 @@ const SlatraGame: React.FC = () => {
         return;
       }
       if (state.subPhase === 'unit_actions' && state.activeUnit) {
+        // Allow switching to another friendly unactivated unit if no actions taken
+        const friendlyUnit = state.units.find(u => u.hp > 0 && posEqual(u.position, pos) && u.faction === state.currentPlayer && !u.activated && u.id !== state.activeUnit!.unitId);
+        if (friendlyUnit) {
+          dispatch({ type: 'SELECT_UNIT', unitId: friendlyUnit.id });
+          return;
+        }
         if (validMoves.some(m => posEqual(m, pos))) {
           dispatch({ type: 'MOVE_UNIT', position: pos });
           return;

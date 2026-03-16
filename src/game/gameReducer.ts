@@ -341,7 +341,17 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case 'SELECT_UNIT': {
-      if (state.phase !== 'playing' || state.subPhase !== 'select_unit') return state;
+      if (state.phase !== 'playing') return state;
+      // Allow switching during unit_actions if no actions taken yet
+      if (state.subPhase === 'unit_actions' && state.activeUnit) {
+        const au = state.activeUnit;
+        const currentUnit = getUnitById(state, au.unitId);
+        const isFresh = currentUnit && au.movementRemaining === currentUnit.move && !au.hasAttacked && !au.hasUsedAbility && !au.hasInteractedObjective;
+        if (!isFresh) return state;
+        // Fall through to select the new unit
+      } else if (state.subPhase !== 'select_unit') {
+        return state;
+      }
       const unit = getUnitById(state, action.unitId);
       if (!unit || unit.faction !== state.currentPlayer || unit.hp <= 0 || unit.activated) return state;
 

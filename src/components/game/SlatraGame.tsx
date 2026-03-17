@@ -6,9 +6,17 @@ import { ActionBar } from '@/components/game/ActionBar';
 import { DiceDisplay } from '@/components/game/DiceDisplay';
 import { GameLog } from '@/components/game/GameLog';
 import { GameHeader } from '@/components/game/GameHeader';
+import { UnitSummary } from '@/components/game/UnitSummary';
 import { gameReducer, createInitialState } from '@/game/gameReducer';
-import { Position, posEqual, getValidMoves, getAdjacentEnemies } from '@/game/types';
+import { Position, posEqual, posKey, getValidMoves, getAdjacentEnemies, isIn5x5, UnitClass } from '@/game/types';
 import { Button } from '@/components/ui/button';
+
+const DEPLOY_ORDER: { unitClass: UnitClass; label: string; icon: string }[] = [
+  { unitClass: 'grunt', label: 'Grunt', icon: '⚔' },
+  { unitClass: 'medic', label: 'Medic', icon: '✚' },
+  { unitClass: 'heavy', label: 'Heavy', icon: '🔥' },
+  { unitClass: 'captain', label: 'Captain', icon: '👑' },
+];
 
 const SlatraGame: React.FC = () => {
   const navigate = useNavigate();
@@ -29,6 +37,32 @@ const SlatraGame: React.FC = () => {
     return getAdjacentEnemies(activeUnitObj, state.units).map(u => u.position);
   }, [activeUnitObj, state.activeUnit, state.units]);
 
+  // Compute aura tile positions
+  const auraTiles = useMemo(() => {
+    const tiles = new Set<string>();
+    if (state.bannerActive) {
+      const captain = state.units.find(u => u.faction === 'plague' && u.unitClass === 'captain' && u.hp > 0);
+      if (captain) {
+        state.units.forEach(u => {
+          if (u.faction === 'plague' && u.hp > 0 && u.unitClass !== 'captain' && isIn5x5(captain.position, u.position)) {
+            tiles.add(posKey(u.position));
+          }
+        });
+      }
+    }
+    if (state.auraActive) {
+      const captain = state.units.find(u => u.faction === 'bone' && u.unitClass === 'captain' && u.hp > 0);
+      if (captain) {
+        state.units.forEach(u => {
+          if (u.faction === 'bone' && u.hp > 0 && u.unitClass !== 'captain' && isIn5x5(captain.position, u.position)) {
+            tiles.add(posKey(u.position));
+          }
+        });
+      }
+    }
+    return tiles;
+  }, [state.units, state.bannerActive, state.auraActive]);
+
   const handleTileClick = useCallback((pos: Position) => {
     if (state.phase === 'hazard_placement') {
       dispatch({ type: 'PLACE_HAZARD', position: pos });
@@ -45,8 +79,14 @@ const SlatraGame: React.FC = () => {
         return;
       }
       if (state.subPhase === 'unit_actions' && state.activeUnit) {
-        // Allow switching to another friendly unactivated unit if no actions taken
-        const friendlyUnit = state.units.find(u => u.hp > 0 && posEqual(u.position, pos) && u.faction === state.currentPlayer && !u.activated && u.id !== state.activeUnit!.unitId);
+        // Click on active unit to deselect
+        const clickedUnit = state.units.find(u => u.hp > 0 && posEqual(u.position, pos));
+        if (clickedUnit && clickedUnit.id === state.activeUnit.unitId) {
+          dispatch({ type: 'DESELECT_UNIT' });
+          return;
+        }
+        // Click on friendly unactivated unit to switch
+        const friendlyUnit = state.units.find(u => u.hp > 0 && posEqual(u.position, pos) && u.faction === state.currentPlayer && !u.activated && u.id !== state.activeUnit.unitId);
         if (friendlyUnit) {
           dispatch({ type: 'SELECT_UNIT', unitId: friendlyUnit.id });
           return;
@@ -65,30 +105,47 @@ const SlatraGame: React.FC = () => {
   }, [state.phase, state.subPhase, state.activeUnit, state.currentPlayer, state.units, validMoves, validAttacks]);
 
   const handleSelectUnit = useCallback((id: string) => {
-    if (state.phase === 'playing' && (state.subPhase === 'select_unit' || state.subPhase === 'unit_actions')) {
-      dispatch({ type: 'SELECT_UNIT', unitId: id });
+    if (state.phase === 'playing') {
+      if (state.subPhase === 'select_unit') {
+        dispatch({ type: 'SELECT_UNIT', unitId: id });
+      } else if (state.subPhase === 'unit_actions') {
+        // If clicking the active unit, deselect
+        if (state.activeUnit && state.activeUnit.unitId === id) {
+          dispatch({ type: 'DESELECT_UNIT' });
+        } else {
+          dispatch({ type: 'SELECT_UNIT', unitId: id });
+        }
+      }
     }
-  }, [state.phase, state.subPhase]);
+  }, [state.phase, state.subPhase, state.activeUnit]);
 
   const canForfeit = useMemo(() => {
     const captain = state.units.find(u => u.faction === state.currentPlayer && u.unitClass === 'captain');
     return !captain || captain.hp <= 0;
   }, [state.units, state.currentPlayer]);
 
+  // Deployment info
   const getDeploymentInfo = () => {
-    if (state.phase === 'deployment_p1') {
-      const count = state.units.filter(u => u.faction === 'plague').length;
-      const order = ['Grunt 1', 'Grunt 2', 'Grunt 3', 'Medic', 'Heavy', 'Captain'];
-      return `Plague Order: Place ${order[count] || 'unit'} (${count}/6) in rows 1-2`;
-    }
-    if (state.phase === 'deployment_p2') {
-      const count = state.units.filter(u => u.faction === 'bone').length;
-      const order = ['Grunt 1', 'Grunt 2', 'Grunt 3', 'Medic', 'Heavy', 'Captain'];
-      return `Bone Legion: Place ${order[count] || 'unit'} (${count}/6) in rows 7-8`;
-    }
-    return '';
+    const faction = state.phase === 'deployment_p1' ? 'plague' : 'bone';
+    const factionName = faction === 'plague' ? 'Plague Order' : 'Bone Legion';
+    const rows = faction === 'plague' ? '1-2' : '7-8';
+    const count = state.units.filter(u => u.faction === faction).length;
+    return { factionName, rows, count, faction };
   };
 
+  const getAvailableDeployClasses = () => {
+    const faction = state.phase === 'deployment_p1' ? 'plague' : 'bone';
+    const factionUnits = state.units.filter(u => u.faction === faction);
+    return DEPLOY_ORDER.filter(d => {
+      const count = factionUnits.filter(u => u.unitClass === d.unitClass).length;
+      const max = d.unitClass === 'grunt' ? 3 : 1;
+      return count < max;
+    }).map(d => {
+      const count = factionUnits.filter(u => u.unitClass === d.unitClass).length;
+      const max = d.unitClass === 'grunt' ? 3 : 1;
+      return { ...d, remaining: max - count };
+    });
+  };
 
   // Game over screen
   if (state.phase === 'game_over') {
@@ -154,9 +211,33 @@ const SlatraGame: React.FC = () => {
               </Button>
             </div>
           )}
-          {(state.phase === 'deployment_p1' || state.phase === 'deployment_p2') && (
-            <div className="text-center text-sm font-display text-primary">{getDeploymentInfo()}</div>
-          )}
+          {(state.phase === 'deployment_p1' || state.phase === 'deployment_p2') && (() => {
+            const info = getDeploymentInfo();
+            const available = getAvailableDeployClasses();
+            return (
+              <div className="text-center space-y-2">
+                <div className="text-sm font-display text-primary">
+                  {info.factionName}: Deploy units in rows {info.rows} ({info.count}/6)
+                </div>
+                <div className="flex gap-2 justify-center flex-wrap">
+                  {available.map(d => (
+                    <Button
+                      key={d.unitClass}
+                      size="sm"
+                      variant={state.selectedDeployClass === d.unitClass ? 'default' : 'outline'}
+                      onClick={() => dispatch({ type: 'SELECT_DEPLOY_CLASS', unitClass: d.unitClass })}
+                      className="text-xs font-display"
+                    >
+                      {d.icon} {d.label} ({d.remaining})
+                    </Button>
+                  ))}
+                </div>
+                {!state.selectedDeployClass && (
+                  <div className="text-xs text-muted-foreground">Select a unit type above, then click a tile</div>
+                )}
+              </div>
+            );
+          })()}
 
           <GameBoard
             units={state.units}
@@ -169,6 +250,7 @@ const SlatraGame: React.FC = () => {
             onTileClick={handleTileClick}
             phase={state.phase}
             highlightRows={highlightRows}
+            auraTiles={auraTiles}
           />
 
           <ActionBar
@@ -186,6 +268,9 @@ const SlatraGame: React.FC = () => {
             phase={state.phase}
             subPhase={state.subPhase}
           />
+
+          {/* Unit summary below action bar */}
+          <UnitSummary unit={activeUnitObj} />
         </div>
 
         {/* Right panel */}

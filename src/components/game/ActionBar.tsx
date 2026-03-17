@@ -82,7 +82,8 @@ export const ActionBar: React.FC<ActionBarProps> = ({
   }
   if (unit.unitClass === 'captain') {
     abilityLabel = unit.faction === 'plague' ? 'Banner of Iron Faith' : 'Aura of Death';
-    if (unit.usedOncePerGame) abilityLabel += ' (USED)';
+    if (unit.usedOncePerGame) abilityLabel += ' (USED — once per game)';
+    else abilityLabel += ' (once per game)';
   }
 
   // Bone Shaman resurrect

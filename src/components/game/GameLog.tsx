@@ -1,12 +1,20 @@
-import React from 'react';
+import React, { useRef, useEffect } from 'react';
 
 interface GameLogProps {
   log: string[];
 }
 
 export const GameLog: React.FC<GameLogProps> = ({ log }) => {
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [log]);
+
   return (
-    <div className="h-48 overflow-y-auto bg-card/50 border border-border rounded-sm p-2 text-xs font-body space-y-0.5">
+    <div ref={scrollRef} className="h-48 overflow-y-auto bg-card/50 border border-border rounded-sm p-2 text-xs font-body space-y-0.5">
       {log.map((entry, i) => (
         <div
           key={i}

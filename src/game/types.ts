@@ -113,9 +113,10 @@ export interface GameState {
   winner: Faction | null;
   // Setup state
   hazardsToPlace: number;
+  selectedDeployClass: UnitClass | null;
   // Captain buff tracking
-  bannerActive: boolean; // Plague Commander Banner of Iron Faith
-  auraActive: boolean;   // Death Legionnaire Aura of Death
+  bannerActive: boolean;
+  auraActive: boolean;
   // Objective damage buff
   damageBuff: { faction: Faction; extraDice: string } | null;
   // Last Rite used

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Position, Unit, CorpseMarker, HazardTile, ObjectiveToken, posEqual, COLUMNS } from '@/game/types';
+import { Position, Unit, CorpseMarker, HazardTile, ObjectiveToken, posEqual, COLUMNS, posKey } from '@/game/types';
 
 interface GameBoardProps {
   units: Unit[];
@@ -12,6 +12,7 @@ interface GameBoardProps {
   onTileClick: (pos: Position) => void;
   phase: string;
   highlightRows?: [number, number];
+  auraTiles: Set<string>;
 }
 
 const UNIT_ICONS: Record<string, Record<string, string>> = {
@@ -30,6 +31,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
   onTileClick,
   phase,
   highlightRows,
+  auraTiles,
 }) => {
   const rows = [1, 2, 3, 4, 5, 6, 7, 8];
   const cols = [0, 1, 2, 3, 4, 5];
@@ -47,7 +49,6 @@ export const GameBoard: React.FC<GameBoardProps> = ({
 
       {rows.map(row => (
         <div key={row} className="flex gap-1 items-center">
-          {/* Row label */}
           <div className="w-6 text-center font-display text-sm text-muted-foreground">{row}</div>
 
           {cols.map(col => {
@@ -61,6 +62,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
             const isSelected = unit && unit.id === selectedUnitId;
             const isDark = (row + col) % 2 === 0;
             const isHighlightRow = highlightRows && row >= highlightRows[0] && row <= highlightRows[1];
+            const isAura = auraTiles.has(posKey(pos));
 
             let tileClasses = 'w-16 h-16 relative flex items-center justify-center cursor-pointer transition-all duration-150 border border-border/30';
 
@@ -72,6 +74,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               tileClasses += ' bg-tile-light';
             }
 
+            if (isAura && !isValidMove && !isValidAttack) tileClasses += ' tile-aura';
             if (isValidMove) tileClasses += ' tile-valid-move bg-tile-valid';
             if (isValidAttack) tileClasses += ' tile-valid-attack bg-tile-attack';
             if (isSelected) tileClasses += ' ring-2 ring-primary';
@@ -86,10 +89,15 @@ export const GameBoard: React.FC<GameBoardProps> = ({
               >
                 {/* Objective token */}
                 {objective && (
-                  <div className={`absolute inset-0 flex items-center justify-center ${objective.used ? 'opacity-30' : 'opacity-60'}`}>
-                    <div className={`w-10 h-10 rounded-sm border-2 flex items-center justify-center text-xs font-display
+                  <div className={`absolute inset-0 flex items-center justify-center ${objective.used ? 'opacity-20' : 'opacity-60'}`}>
+                    <div className={`w-10 h-10 rounded-sm border-2 flex items-center justify-center text-xs font-display relative
                       ${objective.faction === 'plague' ? 'border-plague bg-plague-bg' : 'border-bone bg-bone-bg'}`}>
                       {objective.faction === 'plague' ? '📦' : '⛩'}
+                      {objective.used && (
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          <span className="text-destructive text-2xl font-bold leading-none">✕</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -104,6 +112,11 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                 {/* Hazard indicator */}
                 {isHazard && (
                   <div className="absolute bottom-0.5 left-0.5 text-[8px] text-hazard-glow">☢</div>
+                )}
+
+                {/* Aura indicator */}
+                {isAura && unit && (
+                  <div className="absolute top-0.5 right-0.5 text-[8px]">✦</div>
                 )}
 
                 {/* Unit */}
@@ -127,7 +140,9 @@ export const GameBoard: React.FC<GameBoardProps> = ({
                       <div className="absolute -top-1 -right-1 text-[10px] bg-pinned rounded-full w-4 h-4 flex items-center justify-center">📌</div>
                     )}
                     {unit.activated && (
-                      <div className="absolute -top-1 -left-1 w-3 h-3 bg-muted rounded-full border border-border" />
+                      <div className="absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full bg-muted border-2 border-muted-foreground/50 flex items-center justify-center">
+                        <span className="text-[9px] text-muted-foreground font-bold">✓</span>
+                      </div>
                     )}
                   </div>
                 )}

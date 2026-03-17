@@ -82,7 +82,8 @@ export const ActionBar: React.FC<ActionBarProps> = ({
   }
   if (unit.unitClass === 'captain') {
     abilityLabel = unit.faction === 'plague' ? 'Banner of Iron Faith' : 'Aura of Death';
-    if (unit.usedOncePerGame) abilityLabel += ' (USED)';
+    if (unit.usedOncePerGame) abilityLabel += ' (USED — once per game)';
+    else abilityLabel += ' (once per game)';
   }
 
   // Bone Shaman resurrect
@@ -140,7 +141,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
 
         {canAbility && canResurrect && (
           <Button size="sm" onClick={() => onAbility('resurrect')} className="text-xs bg-corpse/50 hover:bg-corpse/70">
-            💀 Return of the Dead
+            💀 Return of the Dead (once per game)
           </Button>
         )}
 

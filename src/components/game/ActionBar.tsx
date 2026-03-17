@@ -141,7 +141,7 @@ export const ActionBar: React.FC<ActionBarProps> = ({
 
         {canAbility && canResurrect && (
           <Button size="sm" onClick={() => onAbility('resurrect')} className="text-xs bg-corpse/50 hover:bg-corpse/70">
-            💀 Return of the Dead
+            💀 Return of the Dead (once per game)
           </Button>
         )}
 

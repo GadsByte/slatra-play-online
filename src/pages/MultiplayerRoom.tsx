@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -6,81 +6,179 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-
-const STORAGE_KEY = 'slatraDisplayName';
+import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
+import { RoomDetails } from '@/features/multiplayer/types';
 
 const MultiplayerRoom = () => {
   const navigate = useNavigate();
   const { roomId } = useParams<{ roomId: string }>();
-  const [displayName, setDisplayName] = useState('');
-  const [ready, setReady] = useState(false);
+  const {
+    identity,
+    loading,
+    getRoomByIdOrCode,
+    setReadyState,
+    leaveRoom,
+    joinRoom,
+  } = useMultiplayer();
+
+  const [room, setRoom] = useState<RoomDetails | null>(null);
+  const [roomLoading, setRoomLoading] = useState(true);
+  const [actionPending, setActionPending] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
+    if (!loading && !identity) {
       navigate('/multiplayer');
+    }
+  }, [identity, loading, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRoom = async () => {
+      if (!roomId || !identity) {
+        setRoom(null);
+        setRoomLoading(false);
+        return;
+      }
+
+      setRoomLoading(true);
+      const joinedRoom = await joinRoom(roomId);
+      const resolvedRoom = joinedRoom ?? await getRoomByIdOrCode(roomId);
+
+      if (!cancelled) {
+        setRoom(resolvedRoom);
+        setRoomLoading(false);
+      }
+    };
+
+    if (!loading) {
+      void loadRoom();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [getRoomByIdOrCode, identity, joinRoom, loading, roomId]);
+
+  const currentPlayer = useMemo(() => {
+    if (!identity || !room) return null;
+    return room.players.find(player => player.id === identity.id) ?? null;
+  }, [identity, room]);
+
+  const isHost = !!currentPlayer && room?.hostPlayerId === currentPlayer.id;
+  const canStart = !!currentPlayer && room?.players.length === room?.maxPlayers && room.players.every(player => player.ready);
+
+  const handleReadyChange = async (nextReady: boolean) => {
+    if (!room) return;
+    setActionPending(true);
+    const updatedRoom = await setReadyState(room.id, nextReady);
+    if (updatedRoom) setRoom(updatedRoom);
+    setActionPending(false);
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!room) {
+      navigate('/multiplayer/lobby');
       return;
     }
-    setDisplayName(saved);
-  }, [navigate]);
 
-  const isHost = true; // Mock: current user is always host for now
-  const roomName = 'The Blood Pit';
-  const roomCode = roomId?.toUpperCase().slice(-6) || 'XXXXXX';
-
-  const players = [
-    { name: displayName, ready, isHost: true },
-    { name: 'Waiting...', ready: false, isHost: false, isEmpty: true },
-  ];
+    setActionPending(true);
+    await leaveRoom(room.id);
+    setActionPending(false);
+    navigate('/multiplayer/lobby');
+  };
 
   const handleStartGame = () => {
     toast('Online play coming soon', {
-      description: 'Multiplayer gameplay is not yet implemented.',
+      description: 'Multiplayer gameplay is not yet implemented, but the room state is now provider-backed.',
     });
   };
 
+  if (loading || roomLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <p className="font-display tracking-wider text-muted-foreground">CALLING THE WARBAND...</p>
+      </div>
+    );
+  }
+
+  if (!roomId || !room) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <h1 className="font-display text-3xl tracking-widest text-foreground">ROOM NOT FOUND</h1>
+        <p className="font-body text-muted-foreground max-w-md">
+          This room no longer exists in mock mode, or the room code is invalid.
+        </p>
+        <Button onClick={() => navigate('/multiplayer/lobby')} className="font-display tracking-wider">
+          RETURN TO LOBBY
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8 gap-6">
-      <h1 className="font-display text-4xl font-black tracking-widest text-foreground">{roomName}</h1>
+      <h1 className="font-display text-4xl font-black tracking-widest text-foreground">{room.name}</h1>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap justify-center">
         <span className="font-body text-muted-foreground text-sm">Room Code:</span>
-        <span className="font-display text-primary tracking-[0.2em] text-lg">{roomCode}</span>
+        <span className="font-display text-primary tracking-[0.2em] text-lg">{room.code}</span>
+        {room.visibility === 'private' && (
+          <Badge variant="outline" className="font-display border-muted-foreground/30 text-muted-foreground">PRIVATE</Badge>
+        )}
       </div>
 
       <Card className="w-full max-w-sm bg-card border-border">
         <CardContent className="p-4 space-y-3">
-          <h2 className="font-display text-sm tracking-wider text-foreground">PLAYERS</h2>
-          {players.map((p, i) => (
-            <div key={i} className={`flex items-center justify-between py-2 ${i > 0 ? 'border-t border-border' : ''}`}>
-              <div className="flex items-center gap-2">
-                <span className={`font-body ${p.isEmpty ? 'text-muted-foreground/50 italic' : 'text-foreground'}`}>{p.name}</span>
-                {p.isHost && !p.isEmpty && <Badge variant="outline" className="text-xs font-display border-primary/30 text-primary">HOST</Badge>}
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-display text-sm tracking-wider text-foreground">PLAYERS</h2>
+            <Badge
+              variant="outline"
+              className={`font-display ${room.status === 'waiting' ? 'border-primary/30 text-primary' : 'border-muted-foreground/30 text-muted-foreground'}`}
+            >
+              {room.status === 'waiting' ? 'Waiting' : 'In Game'}
+            </Badge>
+          </div>
+
+          {room.players.map((player, index) => (
+            <div key={player.id} className={`flex items-center justify-between py-2 ${index > 0 ? 'border-t border-border' : ''}`}>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-body text-foreground">{player.displayName}</span>
+                {room.hostPlayerId === player.id && <Badge variant="outline" className="text-xs font-display border-primary/30 text-primary">HOST</Badge>}
+                {identity?.id === player.id && <Badge variant="outline" className="text-xs font-display border-muted-foreground/30 text-muted-foreground">YOU</Badge>}
               </div>
-              {!p.isEmpty && (
-                <Badge
-                  className={`text-xs font-display ${p.ready ? 'bg-primary/20 text-primary border-primary/30' : 'bg-muted text-muted-foreground'}`}
-                  variant="outline"
-                >
-                  {p.ready ? 'READY' : 'NOT READY'}
-                </Badge>
-              )}
+              <Badge
+                className={`text-xs font-display ${player.ready ? 'bg-primary/20 text-primary border-primary/30' : 'bg-muted text-muted-foreground'}`}
+                variant="outline"
+              >
+                {player.ready ? 'READY' : 'NOT READY'}
+              </Badge>
             </div>
           ))}
+
+          {room.players.length < room.maxPlayers && (
+            <div className="border-t border-border pt-3 text-center text-sm font-body text-muted-foreground italic">
+              Waiting for another challenger...
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      <div className="flex items-center gap-3">
-        <Switch checked={ready} onCheckedChange={setReady} />
-        <Label className="font-display tracking-wider text-foreground text-sm">READY</Label>
-      </div>
+      {currentPlayer ? (
+        <div className="flex items-center gap-3">
+          <Switch checked={currentPlayer.ready} onCheckedChange={(checked) => void handleReadyChange(checked)} disabled={actionPending} />
+          <Label className="font-display tracking-wider text-foreground text-sm">READY</Label>
+        </div>
+      ) : (
+        <p className="text-sm font-body text-muted-foreground">You are not seated in this room.</p>
+      )}
 
       <div className="flex flex-col gap-3 w-full max-w-sm">
         {isHost && (
           <Button
             size="lg"
             onClick={handleStartGame}
-            disabled={!ready}
+            disabled={!canStart}
             className="w-full font-display text-lg tracking-wider py-6"
           >
             START GAME
@@ -88,7 +186,8 @@ const MultiplayerRoom = () => {
         )}
         <Button
           variant="ghost"
-          onClick={() => navigate('/multiplayer/lobby')}
+          onClick={() => void handleLeaveRoom()}
+          disabled={actionPending}
           className="w-full font-display tracking-wider text-muted-foreground hover:text-foreground"
         >
           LEAVE ROOM

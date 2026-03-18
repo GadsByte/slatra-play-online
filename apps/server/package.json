@@ -1,0 +1,23 @@
+{
+  "name": "@slatra/server",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@slatra/shared": "file:../../packages/shared",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3"
+  }
+}

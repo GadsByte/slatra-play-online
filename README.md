@@ -1,73 +1,88 @@
-# Welcome to your Lovable project
+# SLATRA
 
-## Project info
+SLATRA is a browser adaptation of a tactical 2-player board game. The current repository still runs the existing Vite/React frontend from the repo root while the codebase is being migrated, in small stages, toward a multi-package architecture with a Node.js + TypeScript + Socket.IO backend.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Current state
 
-## How can I edit this code?
+- **Current runnable frontend:** repo root (`src/`, `vite.config.ts`, current `npm run dev` flow)
+- **Local game mode:** implemented client-side and still the gameplay reference
+- **Multiplayer UI:** frontend-only mock flow with provider-backed state and local persistence
+- **Backend:** initial Socket.IO server milestone now scaffolded in `apps/server`
+- **Rules engine extraction:** started in `packages/engine`
 
-There are several ways of editing your application.
+## Incremental monorepo scaffold
 
-**Use Lovable**
+This repo now includes the first monorepo-ready folders without moving the live frontend yet:
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+```text
+.
+├── apps/
+│   ├── server/        # Node.js + TypeScript + Socket.IO backend milestone
+│   └── web/           # Planned destination for the Vite frontend
+├── packages/
+│   ├── engine/        # Reusable SLATRA rules extraction in progress
+│   └── shared/        # Shared DTOs and socket event contracts
+├── src/               # Current live frontend (temporary until a later move)
+└── package.json       # Current frontend package + workspace root
+```
 
-Changes made via Lovable will be committed automatically to this repo.
+### Why the frontend was not moved yet
 
-**Use your preferred IDE**
+Moving the existing app into `apps/web` in the same PR would create a large path-churn refactor on top of the backend/shared/engine work. To reduce risk, the current frontend remains at the repository root in this pass so future PRs can move it more mechanically and with less review noise.
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## New folders
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### `apps/server`
 
-Follow these steps:
+Initial backend milestone with:
+- `GET /health`
+- Socket.IO server
+- in-memory player identity registration
+- in-memory room list/create/join/leave/ready flows
+
+### `packages/shared`
+
+Shared TypeScript package for cross-app contracts.
+
+Currently includes:
+- multiplayer DTOs
+- room/player identifiers
+- Socket.IO client/server event interfaces
+- shared server constants and health DTO
+
+### `packages/engine`
+
+Reusable SLATRA game logic extraction package.
+
+Currently includes:
+- local game state/types
+- board and unit helper functions
+- RNG abstraction
+- command definitions
+- `applyCommand(state, command, rng)`
+
+## Running the project today
+
+### Frontend
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+### Backend
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+npm install
+npm run dev:server
+```
 
-**Use GitHub Codespaces**
+## Workspace notes
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+The root `package.json` declares workspaces for `apps/*` and `packages/*`. The repo is therefore ready for follow-up PRs that:
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+1. wire the frontend multiplayer provider to the Socket.IO backend
+2. move multiplayer DTO usage from `src/features/multiplayer/*` to `packages/shared`
+3. continue extracting rules from `src/game/*` into `packages/engine`
+4. move the current frontend into `apps/web`
+5. connect match state to the authoritative server

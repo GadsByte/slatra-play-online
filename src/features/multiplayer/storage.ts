@@ -11,13 +11,37 @@ function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
+export function createSessionToken() {
+  if (typeof globalThis.crypto?.randomUUID === 'function') {
+    return `session-${globalThis.crypto.randomUUID()}`;
+  }
+
+  return `session-${Math.random().toString(36).slice(2, 12)}`;
+}
+
 export function loadStoredIdentity(): PlayerIdentityDto | null {
   if (!canUseStorage()) return null;
 
   const raw = window.localStorage.getItem(STORAGE_KEYS.identity);
   if (raw) {
     try {
-      return JSON.parse(raw) as PlayerIdentityDto;
+      const parsed = JSON.parse(raw) as Partial<PlayerIdentityDto>;
+      if (!parsed.id || !parsed.displayName) {
+        window.localStorage.removeItem(STORAGE_KEYS.identity);
+        return null;
+      }
+
+      const identity: PlayerIdentityDto = {
+        id: parsed.id,
+        displayName: parsed.displayName,
+        sessionToken: parsed.sessionToken?.trim() || createSessionToken(),
+      };
+
+      if (identity.sessionToken !== parsed.sessionToken) {
+        saveStoredIdentity(identity);
+      }
+
+      return identity;
     } catch {
       window.localStorage.removeItem(STORAGE_KEYS.identity);
     }
@@ -28,6 +52,7 @@ export function loadStoredIdentity(): PlayerIdentityDto | null {
 
   return {
     id: 'player-legacy',
+    sessionToken: createSessionToken(),
     displayName: legacyDisplayName,
   };
 }

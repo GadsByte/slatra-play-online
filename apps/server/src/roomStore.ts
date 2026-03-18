@@ -13,11 +13,15 @@ import {
 } from '@slatra/shared';
 import { randomUUID } from 'node:crypto';
 
+const DISCONNECT_GRACE_PERIOD_MS = 10_000;
+
 interface PlayerSession {
   id: string;
-  socketId: string;
+  sessionToken: string;
+  socketId: string | null;
   displayName: string;
   roomId: string | null;
+  disconnectTimer: NodeJS.Timeout | null;
 }
 
 interface RoomRecord {
@@ -52,44 +56,71 @@ function normalizeCode(value: string) {
 }
 
 export class RoomStore {
-  private playersBySocket = new Map<string, PlayerSession>();
+  private playersBySessionToken = new Map<string, PlayerSession>();
+
+  private sessionTokenBySocketId = new Map<string, string>();
 
   private rooms = new Map<string, RoomRecord>();
 
+  constructor(private readonly onMutation?: (changes: MutationResult) => void) {}
+
   get connectionCount() {
-    return this.playersBySocket.size;
+    return this.sessionTokenBySocketId.size;
   }
 
   get roomCount() {
     return this.rooms.size;
   }
 
-  registerPlayer(socketId: string, displayName: string): PlayerIdentityDto {
-    const trimmed = displayName.trim();
-    const existing = this.playersBySocket.get(socketId);
+  registerPlayer(socketId: string, sessionToken: string, displayName: string): PlayerIdentityDto {
+    const trimmedDisplayName = displayName.trim();
+    const trimmedSessionToken = sessionToken.trim();
+    const existing = this.playersBySessionToken.get(trimmedSessionToken);
+
+    if (existing?.disconnectTimer) {
+      clearTimeout(existing.disconnectTimer);
+    }
+
+    if (existing?.socketId && existing.socketId !== socketId) {
+      this.sessionTokenBySocketId.delete(existing.socketId);
+    }
 
     const session: PlayerSession = {
       id: existing?.id ?? `player-${randomUUID()}`,
+      sessionToken: trimmedSessionToken,
       socketId,
-      displayName: trimmed,
+      displayName: trimmedDisplayName,
       roomId: existing?.roomId ?? null,
+      disconnectTimer: null,
     };
 
-    this.playersBySocket.set(socketId, session);
+    this.playersBySessionToken.set(trimmedSessionToken, session);
+    this.sessionTokenBySocketId.set(socketId, trimmedSessionToken);
 
     if (session.roomId) {
       const room = this.rooms.get(session.roomId);
       const player = room?.players.get(session.id);
       if (room && player) {
-        room.players.set(session.id, { ...player, displayName: trimmed });
+        room.players.set(session.id, { ...player, displayName: trimmedDisplayName });
       }
     }
 
-    return { id: session.id, displayName: session.displayName };
+    return {
+      id: session.id,
+      sessionToken: session.sessionToken,
+      displayName: session.displayName,
+    };
   }
 
   getPlayer(socketId: string) {
-    return this.playersBySocket.get(socketId) ?? null;
+    const sessionToken = this.sessionTokenBySocketId.get(socketId);
+    if (!sessionToken) return null;
+
+    return this.playersBySessionToken.get(sessionToken) ?? null;
+  }
+
+  getDisconnectGracePeriodMs() {
+    return DISCONNECT_GRACE_PERIOD_MS;
   }
 
   listRooms(): LobbyRoomSummaryDto[] {
@@ -201,51 +232,7 @@ export class RoomStore {
       return { error: { message: 'Unknown player session.' } };
     }
 
-    const roomId = explicitRoomId ?? player.roomId;
-    if (!roomId) {
-      return { changes: { updatedRoomIds: [] } };
-    }
-
-    const room = this.rooms.get(roomId);
-    if (!room) {
-      player.roomId = null;
-      return { roomId, changes: { updatedRoomIds: [], leftRoomId: roomId } };
-    }
-
-    room.players.delete(player.id);
-    player.roomId = null;
-
-    const updatedRoomIds: string[] = [];
-
-    if (room.players.size === 0) {
-      this.rooms.delete(room.id);
-      return {
-        roomId: room.id,
-        changes: {
-          updatedRoomIds: [room.id],
-          removedRoomIds: [room.id],
-          clearedMatchRoomIds: room.activeMatchId ? [room.id] : [],
-          leftRoomId: room.id,
-        },
-      };
-    }
-
-    if (room.hostPlayerId === player.id) {
-      room.hostPlayerId = room.players.keys().next().value as string;
-    }
-
-    const clearedMatchRoomIds = room.activeMatchId ? [room.id] : [];
-    if (room.activeMatchId) {
-      room.status = 'waiting';
-      room.activeMatchId = null;
-      room.players.forEach((existingPlayer, existingPlayerId) => {
-        room.players.set(existingPlayerId, { ...existingPlayer, ready: false });
-      });
-    }
-
-    updatedRoomIds.push(room.id);
-
-    return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id, clearedMatchRoomIds } };
+    return this.leaveRoomForSession(player, explicitRoomId);
   }
 
   setReady(socketId: string, input: SetReadyRequestDto): { room?: RoomDetailsDto; changes?: MutationResult; error?: RoomErrorPayload } {
@@ -280,14 +267,101 @@ export class RoomStore {
   }
 
   disconnect(socketId: string): { changes?: MutationResult } {
-    const player = this.playersBySocket.get(socketId);
+    const sessionToken = this.sessionTokenBySocketId.get(socketId);
+    if (!sessionToken) {
+      return { changes: { updatedRoomIds: [] } };
+    }
+
+    this.sessionTokenBySocketId.delete(socketId);
+
+    const player = this.playersBySessionToken.get(sessionToken);
     if (!player) {
       return { changes: { updatedRoomIds: [] } };
     }
 
-    const result = player.roomId ? this.leaveRoom(socketId, player.roomId) : { changes: { updatedRoomIds: [] } };
-    this.playersBySocket.delete(socketId);
-    return { changes: result.changes };
+    if (player.socketId === socketId) {
+      player.socketId = null;
+    }
+
+    if (!player.roomId) {
+      this.playersBySessionToken.delete(sessionToken);
+      if (player.disconnectTimer) {
+        clearTimeout(player.disconnectTimer);
+      }
+      return { changes: { updatedRoomIds: [] } };
+    }
+
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+    }
+
+    player.disconnectTimer = setTimeout(() => {
+      const current = this.playersBySessionToken.get(sessionToken);
+      if (!current || current.socketId) {
+        return;
+      }
+
+      const result = this.leaveRoomForSession(current, current.roomId ?? undefined);
+      this.playersBySessionToken.delete(sessionToken);
+      if (result.changes) {
+        this.onMutation?.(result.changes);
+      }
+    }, DISCONNECT_GRACE_PERIOD_MS);
+
+    return { changes: { updatedRoomIds: [] } };
+  }
+
+  private leaveRoomForSession(player: PlayerSession, explicitRoomId?: string): { roomId?: string; changes?: MutationResult } {
+    const roomId = explicitRoomId ?? player.roomId;
+    if (!roomId) {
+      return { changes: { updatedRoomIds: [] } };
+    }
+
+    const room = this.rooms.get(roomId);
+    if (!room) {
+      player.roomId = null;
+      return { roomId, changes: { updatedRoomIds: [], leftRoomId: roomId } };
+    }
+
+    room.players.delete(player.id);
+    player.roomId = null;
+
+    if (player.disconnectTimer) {
+      clearTimeout(player.disconnectTimer);
+      player.disconnectTimer = null;
+    }
+
+    const updatedRoomIds: string[] = [];
+
+    if (room.players.size === 0) {
+      this.rooms.delete(room.id);
+      return {
+        roomId: room.id,
+        changes: {
+          updatedRoomIds: [room.id],
+          removedRoomIds: [room.id],
+          clearedMatchRoomIds: room.activeMatchId ? [room.id] : [],
+          leftRoomId: room.id,
+        },
+      };
+    }
+
+    if (room.hostPlayerId === player.id) {
+      room.hostPlayerId = room.players.keys().next().value as string;
+    }
+
+    const clearedMatchRoomIds = room.activeMatchId ? [room.id] : [];
+    if (room.activeMatchId) {
+      room.status = 'waiting';
+      room.activeMatchId = null;
+      room.players.forEach((existingPlayer, existingPlayerId) => {
+        room.players.set(existingPlayerId, { ...existingPlayer, ready: false });
+      });
+    }
+
+    updatedRoomIds.push(room.id);
+
+    return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id, clearedMatchRoomIds } };
   }
 
   private toRoomDetails(room: RoomRecord): RoomDetailsDto {

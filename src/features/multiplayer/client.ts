@@ -16,6 +16,7 @@ import {
   RoomPlayerDto,
 } from './types';
 import {
+  createSessionToken,
   loadStoredIdentity,
   loadStoredMatches,
   loadStoredRooms,
@@ -78,6 +79,14 @@ function normalizeRoomLookup(value: string) {
 
 function getStoredIdentity(): PlayerIdentityDto | null {
   return loadStoredIdentity();
+}
+
+function createIdentity(displayName: string, existingIdentity?: PlayerIdentityDto | null): PlayerIdentityDto {
+  return {
+    id: existingIdentity?.id ?? createId('player'),
+    sessionToken: existingIdentity?.sessionToken ?? createSessionToken(),
+    displayName,
+  };
 }
 
 function createPlayer(identity: PlayerIdentityDto): RoomPlayerDto {
@@ -231,10 +240,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     const trimmed = displayName.trim();
     const existing = getStoredIdentity();
 
-    const identity: PlayerIdentityDto = {
-      id: existing?.id ?? createId('player'),
-      displayName: trimmed,
-    };
+    const identity = createIdentity(trimmed, existing);
 
     saveStoredIdentity(identity);
 
@@ -531,9 +537,10 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     }
 
     await this.ensureSocket();
+    const identity = createIdentity(trimmed, this.identity ?? getStoredIdentity());
 
     return this.beginRequest<PlayerIdentityDto>({ kind: 'session:set-name' }, () => {
-      this.socket!.emit('session:set-name', { displayName: trimmed });
+      this.socket!.emit('session:set-name', { displayName: trimmed, sessionToken: identity.sessionToken });
     });
   }
 

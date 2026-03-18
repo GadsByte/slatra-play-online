@@ -83,6 +83,59 @@ npm install
 npm run dev:server
 ```
 
+## Environment variables
+
+### Local development
+
+| Surface | Variable | Required? | Purpose | Local default |
+| --- | --- | --- | --- | --- |
+| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Optional | Chooses the multiplayer transport implementation. | `local` in development |
+| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Optional | Points the frontend at the Socket.IO backend when socket transport is enabled. | `http://localhost:3001` |
+| Server | `PORT` | Optional | HTTP + Socket.IO port for `apps/server`. | `3001` |
+| Server | `CLIENT_ORIGIN` | Optional | CORS origin allowed to connect to the backend. | `*` |
+
+Example local pairing:
+
+```sh
+# frontend
+VITE_MULTIPLAYER_TRANSPORT=socket
+VITE_MULTIPLAYER_SERVER_URL=http://localhost:3001
+
+# apps/server
+PORT=3001
+CLIENT_ORIGIN=http://localhost:8080
+```
+
+### Deployed environments
+
+| Surface | Variable | Required? | Purpose |
+| --- | --- | --- | --- |
+| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Yes | Set to `socket` for production multiplayer builds. |
+| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Yes | Public base URL for the deployed backend if it differs from the frontend origin. |
+| Server | `PORT` | Usually platform-provided | Listening port used by the backend process. |
+| Server | `CLIENT_ORIGIN` | Yes | Exact deployed frontend origin allowed by Socket.IO CORS. |
+
+If the frontend and backend are deployed on different origins, `VITE_MULTIPLAYER_SERVER_URL` and `CLIENT_ORIGIN` must be configured as a matching pair.
+
+## Mandatory deploy verification path
+
+Before deploying this refactor, run the documented verification path in [`docs/deploy-checklist.md`](docs/deploy-checklist.md).
+
+Quick path from the repo root:
+
+```sh
+npm ci
+npm run ci:deploy-checks
+```
+
+Production deployments should go through:
+
+```sh
+npm run deploy:production
+```
+
+That command is intentionally gated: it runs all required verification commands first and will refuse to continue until a real production deploy command is configured.
+
 ## Workspace notes
 
 The root `package.json` declares workspaces for `apps/*` and `packages/*`. The repo is therefore ready for follow-up PRs that:

@@ -15,7 +15,22 @@
     "build:web": "vite build",
     "dev:server": "npm run dev --workspace @slatra/server",
     "build:server": "npm run build --workspace @slatra/server",
-    "typecheck:server": "npm run typecheck --workspace @slatra/server"
+    "typecheck:server": "npm run typecheck --workspace @slatra/server",
+    "build:shared": "npm run build --workspace @slatra/shared",
+    "typecheck:shared": "npm run typecheck --workspace @slatra/shared",
+    "build:engine": "npm run build --workspace @slatra/engine",
+    "typecheck:engine": "npm run typecheck --workspace @slatra/engine",
+    "ci:frontend-build": "npm run build:web",
+    "ci:server-build": "npm run build:server",
+    "ci:server-typecheck": "npm run typecheck:server",
+    "ci:shared-build": "npm run build:shared",
+    "ci:shared-typecheck": "npm run typecheck:shared",
+    "ci:engine-build": "npm run build:engine",
+    "ci:engine-typecheck": "npm run typecheck:engine",
+    "test:smoke:server": "vitest run --config vitest.server-smoke.config.ts",
+    "test:smoke:frontend": "vitest run --config vitest.frontend-smoke.config.ts",
+    "ci:deploy-checks": "npm run ci:frontend-build && npm run ci:server-build && npm run ci:server-typecheck && npm run ci:shared-build && npm run ci:shared-typecheck && npm run ci:engine-build && npm run ci:engine-typecheck && npm run test:smoke:server && npm run test:smoke:frontend",
+    "deploy:production": "npm run ci:deploy-checks && node scripts/deploy-production.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

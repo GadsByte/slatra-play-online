@@ -85,6 +85,8 @@ function seedMatches(): MatchSnapshotDto[] {
       ],
       gameState: createInitialState(),
       createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      updatedAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+      revision: 0,
     },
   ];
 }
@@ -327,6 +329,8 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       ],
       gameState: createInitialState(),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      revision: 0,
     };
 
     const nextRooms = [...rooms];
@@ -363,6 +367,8 @@ export class LocalMultiplayerClient implements MultiplayerClient {
         ? {
             ...existingMatch,
             gameState: nextState,
+            revision: existingMatch.revision + 1,
+            updatedAt: new Date().toISOString(),
           }
         : existingMatch,
     );

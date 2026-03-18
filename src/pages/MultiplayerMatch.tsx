@@ -290,7 +290,7 @@ const MultiplayerMatch = () => {
             </div>
             <h1 className="font-display text-3xl font-black tracking-widest text-foreground">{room.name}</h1>
             <p className="font-body text-sm text-muted-foreground">
-              Match started {new Date(match.createdAt).toLocaleString()} — clients now render the server-owned engine state.
+              Match started {new Date(match.createdAt).toLocaleString()} • authoritative revision {match.revision} • last synced {new Date(match.updatedAt).toLocaleTimeString()}.
             </p>
           </div>
 
@@ -416,7 +416,7 @@ const MultiplayerMatch = () => {
           />
 
           <Card className="w-full bg-card border-border">
-            <CardContent className="grid gap-3 p-4 sm:grid-cols-4">
+            <CardContent className="grid gap-3 p-4 sm:grid-cols-5">
               <div>
                 <p className="text-xs font-display tracking-wider text-muted-foreground">STATUS</p>
                 <p className="font-body text-foreground">{match.status}</p>
@@ -432,6 +432,10 @@ const MultiplayerMatch = () => {
               <div>
                 <p className="text-xs font-display tracking-wider text-muted-foreground">CURRENT TURN</p>
                 <p className="font-body text-foreground">{gameState.currentPlayer}</p>
+              </div>
+              <div>
+                <p className="text-xs font-display tracking-wider text-muted-foreground">REVISION</p>
+                <p className="font-body text-foreground">{match.revision}</p>
               </div>
             </CardContent>
           </Card>

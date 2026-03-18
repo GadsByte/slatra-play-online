@@ -33,6 +33,8 @@ describe('MatchStore', () => {
       { seat: 'plague', playerId: room.hostPlayerId },
       { seat: 'bone', playerId: 'player-guest' },
     ]);
+    expect(match.revision).toBe(0);
+    expect(match.updatedAt).toBe(match.createdAt);
     expect(store.getMatch(room.id)).toEqual(match);
     expect(store.getMatchRecord(room.id)?.id).toBe(match.id);
   });
@@ -46,5 +48,18 @@ describe('MatchStore', () => {
 
     expect(secondMatch).toEqual(firstMatch);
     expect(store.getMatchRecord(room.id)?.id).toBe(firstMatch.id);
+  });
+
+  it('increments the authoritative snapshot revision after accepted commands', () => {
+    const store = new MatchStore();
+    const room = createRoom();
+
+    store.createMatch(room);
+    const result = store.applyCommand(room.id, { type: 'PLACE_HAZARD', position: { row: 3, col: 0 } });
+
+    expect(result?.changed).toBe(true);
+    expect(result?.update.reason).toBe('command_applied');
+    expect(result?.update.match.revision).toBe(1);
+    expect(result?.update.command).toEqual({ type: 'PLACE_HAZARD', position: { row: 3, col: 0 } });
   });
 });

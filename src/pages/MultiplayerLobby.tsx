@@ -9,6 +9,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
+import { toLobbyRoomViewModel } from '@/features/multiplayer/types';
 
 const MultiplayerLobby = () => {
   const navigate = useNavigate();
@@ -145,6 +146,8 @@ const MultiplayerLobby = () => {
     }
   };
 
+  const lobbyRooms = rooms.map(toLobbyRoomViewModel);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center px-4">
@@ -236,7 +239,7 @@ const MultiplayerLobby = () => {
           </div>
         </div>
 
-        {rooms.length === 0 && (
+        {lobbyRooms.length === 0 && (
           <Card className="bg-card border-border">
             <CardContent className="p-8 text-center space-y-2">
               <p className="font-display tracking-wider text-foreground">NO ROOMS IN THE LOBBY</p>
@@ -245,11 +248,7 @@ const MultiplayerLobby = () => {
           </Card>
         )}
 
-        {rooms.map(room => {
-          const isFull = room.playerCount >= room.maxPlayers;
-          const isInGame = room.status === 'in_game';
-
-          return (
+        {lobbyRooms.map(({ room, isFull, isInGame }) => (
             <Card key={room.id} className="bg-card border-border">
               <CardContent className="flex items-center justify-between p-4">
                 <div className="space-y-1">
@@ -279,8 +278,7 @@ const MultiplayerLobby = () => {
                 </Button>
               </CardContent>
             </Card>
-          );
-        })}
+        ))}
       </div>
 
       <Button

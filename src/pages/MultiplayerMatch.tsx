@@ -11,8 +11,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
-import type { MatchCommand } from '@/features/multiplayer/types';
-import { COLUMNS, type Faction, getAdjacentEnemies, getValidMoves, isIn5x5, posEqual, posKey, type Position, type UnitClass } from '@/game/types';
+import { toMatchViewModel, type MatchCommandDto } from '@/features/multiplayer/types';
+import { COLUMNS, getAdjacentEnemies, getValidMoves, isIn5x5, posEqual, posKey, type Position, type UnitClass } from '@/game/types';
 import { toast } from 'sonner';
 
 const DEPLOY_ORDER: { unitClass: UnitClass; label: string; icon: string }[] = [
@@ -44,19 +44,15 @@ const MultiplayerMatch = () => {
     }
   }, [loading, navigate, room]);
 
-  const currentPlayer = useMemo(() => {
-    if (!room || !identity) return null;
-    return room.players.find(player => player.id === identity.id) ?? null;
-  }, [identity, room]);
+  const matchView = useMemo(() => {
+    if (!room || !match) return null;
+    return toMatchViewModel(room, match, identity?.id);
+  }, [identity?.id, match, room]);
 
-  const viewerSeat = useMemo<Faction | null>(() => {
-    if (!match || !identity) return null;
-    return match.seats.find(seat => seat.playerId === identity.id)?.seat ?? null;
-  }, [identity, match]);
+  const viewerSeat = matchView?.viewerSeat ?? null;
+  const viewerTurn = matchView?.viewerTurn ?? false;
 
-  const viewerTurn = !!viewerSeat && gameState?.currentPlayer === viewerSeat;
-
-  const issueCommand = useCallback(async (command: MatchCommand) => {
+  const issueCommand = useCallback(async (command: MatchCommandDto) => {
     if (!roomId) return;
 
     setActionPending(true);
@@ -294,7 +290,7 @@ const MultiplayerMatch = () => {
             </div>
             <h1 className="font-display text-3xl font-black tracking-widest text-foreground">{room.name}</h1>
             <p className="font-body text-sm text-muted-foreground">
-              Started {new Date(match.createdAt).toLocaleString()} — clients now render the server-owned engine state.
+              Match started {new Date(match.createdAt).toLocaleString()} — clients now render the server-owned engine state.
             </p>
           </div>
 

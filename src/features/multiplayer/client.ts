@@ -7,13 +7,13 @@ import { io, type Socket } from 'socket.io-client';
 import {
   CreateRoomInput,
   JoinRoomInput,
-  LobbyRoomSummary,
-  MatchCommand,
-  MatchSnapshot,
+  LobbyRoomSummaryDto,
+  MatchCommandDto,
+  MatchSnapshotDto,
   MultiplayerSnapshot,
-  PlayerIdentity,
-  RoomDetails,
-  RoomPlayer,
+  PlayerIdentityDto,
+  RoomDetailsDto,
+  RoomPlayerDto,
 } from './types';
 import {
   loadStoredIdentity,
@@ -30,16 +30,16 @@ export type MultiplayerTransport = 'local' | 'socket';
 export interface MultiplayerClient {
   loadSnapshot(): Promise<MultiplayerSnapshot>;
   subscribe(listener: MultiplayerSnapshotListener): () => void;
-  saveDisplayName(displayName: string): Promise<PlayerIdentity>;
-  listRooms(): Promise<LobbyRoomSummary[]>;
-  getRoom(roomIdOrCode: string): Promise<RoomDetails | null>;
-  getMatch(roomId: string): Promise<MatchSnapshot | null>;
-  createRoom(input: CreateRoomInput): Promise<RoomDetails>;
-  joinRoom(input: JoinRoomInput): Promise<RoomDetails | null>;
+  saveDisplayName(displayName: string): Promise<PlayerIdentityDto>;
+  listRooms(): Promise<LobbyRoomSummaryDto[]>;
+  getRoom(roomIdOrCode: string): Promise<RoomDetailsDto | null>;
+  getMatch(roomId: string): Promise<MatchSnapshotDto | null>;
+  createRoom(input: CreateRoomInput): Promise<RoomDetailsDto>;
+  joinRoom(input: JoinRoomInput): Promise<RoomDetailsDto | null>;
   leaveRoom(roomId: string): Promise<void>;
-  setReady(roomId: string, ready: boolean): Promise<RoomDetails | null>;
-  startMatch(roomId: string): Promise<MatchSnapshot | null>;
-  sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null>;
+  setReady(roomId: string, ready: boolean): Promise<RoomDetailsDto | null>;
+  startMatch(roomId: string): Promise<MatchSnapshotDto | null>;
+  sendMatchCommand(roomId: string, command: MatchCommandDto): Promise<MatchSnapshotDto | null>;
 }
 
 interface PendingRequest<TValue = unknown> {
@@ -76,11 +76,11 @@ function normalizeRoomLookup(value: string) {
   return value.trim().toLowerCase();
 }
 
-function getStoredIdentity(): PlayerIdentity | null {
+function getStoredIdentity(): PlayerIdentityDto | null {
   return loadStoredIdentity();
 }
 
-function createPlayer(identity: PlayerIdentity): RoomPlayer {
+function createPlayer(identity: PlayerIdentityDto): RoomPlayerDto {
   return {
     id: identity.id,
     displayName: identity.displayName,
@@ -88,7 +88,7 @@ function createPlayer(identity: PlayerIdentity): RoomPlayer {
   };
 }
 
-function seedRooms(): RoomDetails[] {
+function seedRooms(): RoomDetailsDto[] {
   return [
     {
       id: 'room-blood-pit',
@@ -133,7 +133,7 @@ function seedRooms(): RoomDetails[] {
   ];
 }
 
-function seedMatches(): MatchSnapshot[] {
+function seedMatches(): MatchSnapshotDto[] {
   return [
     {
       id: 'match-bone-throne',
@@ -149,7 +149,7 @@ function seedMatches(): MatchSnapshot[] {
   ];
 }
 
-function ensureRooms(): RoomDetails[] {
+function ensureRooms(): RoomDetailsDto[] {
   const stored = loadStoredRooms();
   if (stored.length > 0) return stored;
 
@@ -158,7 +158,7 @@ function ensureRooms(): RoomDetails[] {
   return seeded;
 }
 
-function ensureMatches(): MatchSnapshot[] {
+function ensureMatches(): MatchSnapshotDto[] {
   const stored = loadStoredMatches();
   if (stored.length > 0) return stored;
 
@@ -167,7 +167,7 @@ function ensureMatches(): MatchSnapshot[] {
   return seeded;
 }
 
-function toLobbySummary(room: RoomDetails): LobbyRoomSummary {
+function toLobbySummary(room: RoomDetailsDto): LobbyRoomSummaryDto {
   const host = room.players.find(player => player.id === room.hostPlayerId);
 
   return {
@@ -184,17 +184,17 @@ function toLobbySummary(room: RoomDetails): LobbyRoomSummary {
   };
 }
 
-function persistRooms(rooms: RoomDetails[]) {
+function persistRooms(rooms: RoomDetailsDto[]) {
   saveStoredRooms(rooms);
   return rooms;
 }
 
-function persistMatches(matches: MatchSnapshot[]) {
+function persistMatches(matches: MatchSnapshotDto[]) {
   saveStoredMatches(matches);
   return matches;
 }
 
-function createSnapshot(identity: PlayerIdentity | null, roomStates: RoomDetails[], matchStates: MatchSnapshot[]): MultiplayerSnapshot {
+function createSnapshot(identity: PlayerIdentityDto | null, roomStates: RoomDetailsDto[], matchStates: MatchSnapshotDto[]): MultiplayerSnapshot {
   return {
     identity,
     rooms: roomStates.map(toLobbySummary),
@@ -227,11 +227,11 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return this.getSnapshot();
   }
 
-  async saveDisplayName(displayName: string): Promise<PlayerIdentity> {
+  async saveDisplayName(displayName: string): Promise<PlayerIdentityDto> {
     const trimmed = displayName.trim();
     const existing = getStoredIdentity();
 
-    const identity: PlayerIdentity = {
+    const identity: PlayerIdentityDto = {
       id: existing?.id ?? createId('player'),
       displayName: trimmed,
     };
@@ -250,30 +250,30 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return identity;
   }
 
-  async listRooms(): Promise<LobbyRoomSummary[]> {
+  async listRooms(): Promise<LobbyRoomSummaryDto[]> {
     const snapshot = this.getSnapshot();
     this.emitSnapshot();
     return snapshot.rooms;
   }
 
-  async getRoom(roomIdOrCode: string): Promise<RoomDetails | null> {
+  async getRoom(roomIdOrCode: string): Promise<RoomDetailsDto | null> {
     const lookup = normalizeRoomLookup(roomIdOrCode);
     const code = normalizeCode(roomIdOrCode);
 
     return ensureRooms().find(room => room.id === lookup || room.code === code) ?? null;
   }
 
-  async getMatch(roomId: string): Promise<MatchSnapshot | null> {
+  async getMatch(roomId: string): Promise<MatchSnapshotDto | null> {
     return ensureMatches().find(match => match.roomId === roomId) ?? null;
   }
 
-  async createRoom(input: CreateRoomInput): Promise<RoomDetails> {
+  async createRoom(input: CreateRoomInput): Promise<RoomDetailsDto> {
     const identity = getStoredIdentity();
     if (!identity) {
       throw new Error('A display name is required before creating a room.');
     }
 
-    const room: RoomDetails = {
+    const room: RoomDetailsDto = {
       id: createId('room'),
       name: input.name.trim(),
       code: createId('code').replace('code-', '').slice(0, 6).toUpperCase(),
@@ -290,7 +290,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return room;
   }
 
-  async joinRoom(input: JoinRoomInput): Promise<RoomDetails | null> {
+  async joinRoom(input: JoinRoomInput): Promise<RoomDetailsDto | null> {
     const identity = getStoredIdentity();
     if (!identity) {
       throw new Error('A display name is required before joining a room.');
@@ -308,7 +308,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       return room;
     }
 
-    const nextRoom: RoomDetails = alreadyInRoom
+    const nextRoom: RoomDetailsDto = alreadyInRoom
       ? {
           ...room,
           players: room.players.map(player =>
@@ -360,7 +360,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     this.emitSnapshot();
   }
 
-  async setReady(roomId: string, ready: boolean): Promise<RoomDetails | null> {
+  async setReady(roomId: string, ready: boolean): Promise<RoomDetailsDto | null> {
     const identity = getStoredIdentity();
     if (!identity) return null;
 
@@ -371,7 +371,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     const room = rooms[roomIndex];
     if (!room.players.some(player => player.id === identity.id)) return room;
 
-    const nextRoom: RoomDetails = {
+    const nextRoom: RoomDetailsDto = {
       ...room,
       players: room.players.map(player =>
         player.id === identity.id
@@ -387,7 +387,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return nextRoom;
   }
 
-  async startMatch(roomId: string): Promise<MatchSnapshot | null> {
+  async startMatch(roomId: string): Promise<MatchSnapshotDto | null> {
     const identity = getStoredIdentity();
     if (!identity) {
       throw new Error('A display name is required before starting a match.');
@@ -417,7 +417,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       return existingMatch;
     }
 
-    const match: MatchSnapshot = {
+    const match: MatchSnapshotDto = {
       id: createId('match'),
       roomId,
       status: 'active',
@@ -446,7 +446,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return createSnapshot(getStoredIdentity(), ensureRooms(), ensureMatches());
   }
 
-  async sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null> {
+  async sendMatchCommand(roomId: string, command: MatchCommandDto): Promise<MatchSnapshotDto | null> {
     const identity = getStoredIdentity();
     if (!identity) {
       throw new Error('A display name is required before playing a match.');
@@ -491,15 +491,15 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
   private pendingRequest: PendingRequest | null = null;
 
-  private identity: PlayerIdentity | null = getStoredIdentity();
+  private identity: PlayerIdentityDto | null = getStoredIdentity();
 
   private sessionReady = false;
 
-  private rooms: LobbyRoomSummary[] = [];
+  private rooms: LobbyRoomSummaryDto[] = [];
 
-  private roomStates = new Map<string, RoomDetails>();
+  private roomStates = new Map<string, RoomDetailsDto>();
 
-  private matchStates = new Map<string, MatchSnapshot>();
+  private matchStates = new Map<string, MatchSnapshotDto>();
 
   constructor(private readonly serverUrl = 'http://localhost:3001') {}
 
@@ -524,7 +524,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     return this.getSnapshot();
   }
 
-  async saveDisplayName(displayName: string): Promise<PlayerIdentity> {
+  async saveDisplayName(displayName: string): Promise<PlayerIdentityDto> {
     const trimmed = displayName.trim();
     if (!trimmed) {
       throw new Error('Display name is required.');
@@ -532,31 +532,31 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
     await this.ensureSocket();
 
-    return this.beginRequest<PlayerIdentity>({ kind: 'session:set-name' }, () => {
+    return this.beginRequest<PlayerIdentityDto>({ kind: 'session:set-name' }, () => {
       this.socket!.emit('session:set-name', { displayName: trimmed });
     });
   }
 
-  async listRooms(): Promise<LobbyRoomSummary[]> {
+  async listRooms(): Promise<LobbyRoomSummaryDto[]> {
     await this.ensureSocket();
 
-    return this.beginRequest<LobbyRoomSummary[]>({ kind: 'lobby:list-rooms' }, () => {
+    return this.beginRequest<LobbyRoomSummaryDto[]>({ kind: 'lobby:list-rooms' }, () => {
       this.socket!.emit('lobby:list-rooms');
     });
   }
 
-  async getRoom(roomIdOrCode: string): Promise<RoomDetails | null> {
+  async getRoom(roomIdOrCode: string): Promise<RoomDetailsDto | null> {
     const lookup = normalizeRoomLookup(roomIdOrCode);
     const code = normalizeCode(roomIdOrCode);
 
     return Array.from(this.roomStates.values()).find(room => room.id === lookup || room.code === code) ?? null;
   }
 
-  async getMatch(roomId: string): Promise<MatchSnapshot | null> {
+  async getMatch(roomId: string): Promise<MatchSnapshotDto | null> {
     return this.matchStates.get(roomId) ?? null;
   }
 
-  async createRoom(input: CreateRoomInput): Promise<RoomDetails> {
+  async createRoom(input: CreateRoomInput): Promise<RoomDetailsDto> {
     const trimmedName = input.name.trim();
     if (!trimmedName) {
       throw new Error('Room name is required.');
@@ -564,12 +564,12 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
     await this.ensureSocket();
 
-    return this.beginRequest<RoomDetails>({ kind: 'room:create' }, () => {
+    return this.beginRequest<RoomDetailsDto>({ kind: 'room:create' }, () => {
       this.socket!.emit('room:create', { ...input, name: trimmedName });
     });
   }
 
-  async joinRoom(input: JoinRoomInput): Promise<RoomDetails | null> {
+  async joinRoom(input: JoinRoomInput): Promise<RoomDetailsDto | null> {
     const roomIdOrCode = input.roomIdOrCode.trim();
     if (!roomIdOrCode) {
       throw new Error('A room code or room id is required.');
@@ -577,7 +577,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
     await this.ensureSocket();
 
-    return this.beginRequest<RoomDetails | null>({ kind: 'room:join', roomIdOrCode }, () => {
+    return this.beginRequest<RoomDetailsDto | null>({ kind: 'room:join', roomIdOrCode }, () => {
       this.socket!.emit('room:join', { roomIdOrCode });
     });
   }
@@ -590,26 +590,26 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     });
   }
 
-  async setReady(roomId: string, ready: boolean): Promise<RoomDetails | null> {
+  async setReady(roomId: string, ready: boolean): Promise<RoomDetailsDto | null> {
     await this.ensureSocket();
 
-    return this.beginRequest<RoomDetails | null>({ kind: 'room:set-ready', roomId }, () => {
+    return this.beginRequest<RoomDetailsDto | null>({ kind: 'room:set-ready', roomId }, () => {
       this.socket!.emit('room:set-ready', { roomId, ready });
     });
   }
 
-  async startMatch(roomId: string): Promise<MatchSnapshot | null> {
+  async startMatch(roomId: string): Promise<MatchSnapshotDto | null> {
     await this.ensureSocket();
 
-    return this.beginRequest<MatchSnapshot | null>({ kind: 'room:start-match', roomId }, () => {
+    return this.beginRequest<MatchSnapshotDto | null>({ kind: 'room:start-match', roomId }, () => {
       this.socket!.emit('room:start-match', { roomId });
     });
   }
 
-  async sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null> {
+  async sendMatchCommand(roomId: string, command: MatchCommandDto): Promise<MatchSnapshotDto | null> {
     await this.ensureSocket();
 
-    return this.beginRequest<MatchSnapshot | null>({ kind: 'match:command', roomId }, () => {
+    return this.beginRequest<MatchSnapshotDto | null>({ kind: 'match:command', roomId }, () => {
       this.socket!.emit('match:command', { roomId, command });
     });
   }

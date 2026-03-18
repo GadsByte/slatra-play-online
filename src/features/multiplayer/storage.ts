@@ -1,4 +1,4 @@
-import { MatchSnapshot, PlayerIdentity, RoomDetails } from './types';
+import { MatchSnapshotDto, PlayerIdentityDto, RoomDetailsDto } from './types';
 
 const STORAGE_KEYS = {
   identity: 'slatra.multiplayer.identity',
@@ -11,13 +11,13 @@ function canUseStorage() {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-export function loadStoredIdentity(): PlayerIdentity | null {
+export function loadStoredIdentity(): PlayerIdentityDto | null {
   if (!canUseStorage()) return null;
 
   const raw = window.localStorage.getItem(STORAGE_KEYS.identity);
   if (raw) {
     try {
-      return JSON.parse(raw) as PlayerIdentity;
+      return JSON.parse(raw) as PlayerIdentityDto;
     } catch {
       window.localStorage.removeItem(STORAGE_KEYS.identity);
     }
@@ -32,20 +32,20 @@ export function loadStoredIdentity(): PlayerIdentity | null {
   };
 }
 
-export function saveStoredIdentity(identity: PlayerIdentity) {
+export function saveStoredIdentity(identity: PlayerIdentityDto) {
   if (!canUseStorage()) return;
   window.localStorage.setItem(STORAGE_KEYS.identity, JSON.stringify(identity));
   window.localStorage.setItem(STORAGE_KEYS.legacyDisplayName, identity.displayName);
 }
 
-export function loadStoredRooms(): RoomDetails[] {
+export function loadStoredRooms(): RoomDetailsDto[] {
   if (!canUseStorage()) return [];
 
   const raw = window.localStorage.getItem(STORAGE_KEYS.rooms);
   if (!raw) return [];
 
   try {
-    const rooms = JSON.parse(raw) as RoomDetails[];
+    const rooms = JSON.parse(raw) as RoomDetailsDto[];
     return Array.isArray(rooms) ? rooms : [];
   } catch {
     window.localStorage.removeItem(STORAGE_KEYS.rooms);
@@ -53,19 +53,19 @@ export function loadStoredRooms(): RoomDetails[] {
   }
 }
 
-export function saveStoredRooms(rooms: RoomDetails[]) {
+export function saveStoredRooms(rooms: RoomDetailsDto[]) {
   if (!canUseStorage()) return;
   window.localStorage.setItem(STORAGE_KEYS.rooms, JSON.stringify(rooms));
 }
 
-export function loadStoredMatches(): MatchSnapshot[] {
+export function loadStoredMatches(): MatchSnapshotDto[] {
   if (!canUseStorage()) return [];
 
   const raw = window.localStorage.getItem(STORAGE_KEYS.matches);
   if (!raw) return [];
 
   try {
-    const matches = JSON.parse(raw) as MatchSnapshot[];
+    const matches = JSON.parse(raw) as MatchSnapshotDto[];
     return Array.isArray(matches) ? matches : [];
   } catch {
     window.localStorage.removeItem(STORAGE_KEYS.matches);
@@ -73,7 +73,7 @@ export function loadStoredMatches(): MatchSnapshot[] {
   }
 }
 
-export function saveStoredMatches(matches: MatchSnapshot[]) {
+export function saveStoredMatches(matches: MatchSnapshotDto[]) {
   if (!canUseStorage()) return;
   window.localStorage.setItem(STORAGE_KEYS.matches, JSON.stringify(matches));
 }

@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
+import { toRoomViewModel } from '@/features/multiplayer/types';
 
 const MultiplayerRoom = () => {
   const navigate = useNavigate();
@@ -99,13 +100,14 @@ const MultiplayerRoom = () => {
     }
   }, [match, navigate, room]);
 
-  const currentPlayer = useMemo(() => {
-    if (!identity || !room) return null;
-    return room.players.find(player => player.id === identity.id) ?? null;
-  }, [identity, room]);
+  const roomView = useMemo(() => {
+    if (!room) return null;
+    return toRoomViewModel(room, identity?.id);
+  }, [identity?.id, room]);
 
-  const isHost = !!currentPlayer && room?.hostPlayerId === currentPlayer.id;
-  const canStart = !!currentPlayer && room?.players.length === room?.maxPlayers && room.players.every(player => player.ready);
+  const currentPlayer = roomView?.currentPlayer ?? null;
+  const isHost = roomView?.isHost ?? false;
+  const canStart = roomView?.canStart ?? false;
 
   const handleReadyChange = async (nextReady: boolean) => {
     if (!room) return;
@@ -223,7 +225,7 @@ const MultiplayerRoom = () => {
             </div>
           ))}
 
-          {room.players.length < room.maxPlayers && (
+          {roomView && roomView.openSeatCount > 0 && (
             <div className="border-t border-border pt-3 text-center text-sm font-body text-muted-foreground italic">
               Waiting for another challenger...
             </div>

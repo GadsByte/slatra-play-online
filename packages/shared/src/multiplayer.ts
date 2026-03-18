@@ -171,12 +171,23 @@ export interface MatchSnapshotDto {
   seats: MatchSeatAssignmentDto[];
   gameState: MatchGameStateDto;
   createdAt: string;
+  updatedAt: string;
+  revision: number;
 }
 
 export interface MatchSeatAssignmentDto {
   seat: FactionDto;
   playerId: PlayerId;
 }
+
+export type GameplayErrorCode =
+  | 'not_registered'
+  | 'not_in_room'
+  | 'not_in_match'
+  | 'not_authorized'
+  | 'invalid_phase'
+  | 'invalid_command'
+  | 'server_error';
 
 export type MatchCommandDto =
   | { type: 'START_GAME' }
@@ -231,6 +242,11 @@ export interface MatchCommandRequestDto {
   command: MatchCommandDto;
 }
 
+export interface GameplayCommandRequestDto {
+  roomId: RoomId;
+  command: MatchCommandDto;
+}
+
 export interface SessionReadyPayload {
   player: PlayerIdentityDto;
 }
@@ -245,6 +261,14 @@ export interface RoomStatePayload {
 
 export interface MatchStatePayload {
   match: MatchSnapshotDto;
+}
+
+export interface MatchStateUpdatePayload {
+  roomId: RoomId;
+  match: MatchSnapshotDto;
+  reason: 'match_started' | 'sync' | 'command_applied';
+  command?: MatchCommandDto;
+  emittedAt: string;
 }
 
 export interface MatchStartedPayload {
@@ -265,6 +289,13 @@ export interface MatchErrorPayload {
   roomId?: RoomId;
 }
 
+export interface GameplayErrorPayload {
+  code: GameplayErrorCode;
+  message: string;
+  roomId?: RoomId;
+  command?: MatchCommandDto;
+}
+
 export interface ClientToServerEvents {
   'session:set-name': (payload: RegisterPlayerRequestDto) => void;
   'lobby:list-rooms': () => void;
@@ -273,7 +304,7 @@ export interface ClientToServerEvents {
   'room:leave': (payload: LeaveRoomRequestDto) => void;
   'room:set-ready': (payload: SetReadyRequestDto) => void;
   'room:start-match': (payload: StartMatchRequestDto) => void;
-  'match:command': (payload: MatchCommandRequestDto) => void;
+  'match:command': (payload: GameplayCommandRequestDto) => void;
 }
 
 export interface ServerToClientEvents {
@@ -281,8 +312,8 @@ export interface ServerToClientEvents {
   'lobby:rooms': (payload: LobbyRoomsPayload) => void;
   'room:state': (payload: RoomStatePayload) => void;
   'match:started': (payload: MatchStartedPayload) => void;
-  'match:state': (payload: MatchStatePayload) => void;
+  'match:state': (payload: MatchStateUpdatePayload) => void;
   'room:not-found': (payload: RoomNotFoundPayload) => void;
   'room:error': (payload: RoomErrorPayload) => void;
-  'match:error': (payload: MatchErrorPayload) => void;
+  'match:error': (payload: GameplayErrorPayload) => void;
 }

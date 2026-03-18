@@ -7,7 +7,11 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { createConfiguredMultiplayerClient, type MultiplayerClient } from './client';
+import {
+  createConfiguredMultiplayerClient,
+  readMultiplayerConfig,
+  type MultiplayerClient,
+} from './client';
 import {
   LobbyRoomSummaryDto,
   MatchCommandDto,
@@ -46,7 +50,10 @@ function normalizeCode(value: string) {
 }
 
 export function MultiplayerProvider({ children }: { children: ReactNode }) {
-  const [client] = useState<MultiplayerClient>(() => createConfiguredMultiplayerClient());
+  const [client] = useState<MultiplayerClient>(() => {
+    const config = readMultiplayerConfig();
+    return createConfiguredMultiplayerClient(config);
+  });
   const [identity, setIdentity] = useState<PlayerIdentityDto | null>(null);
   const [rooms, setRooms] = useState<LobbyRoomSummaryDto[]>([]);
   const [roomStates, setRoomStates] = useState<RoomDetailsDto[]>([]);

@@ -70,6 +70,12 @@ npm install
 npm run dev
 ```
 
+Frontend multiplayer transport selection is environment-driven:
+- `VITE_MULTIPLAYER_TRANSPORT=local` forces the local in-browser mock client.
+- `VITE_MULTIPLAYER_TRANSPORT=socket` forces the Socket.IO-backed client.
+- When unset, development defaults to `local` and deployed/production builds default to `socket`.
+- `VITE_MULTIPLAYER_SERVER_URL` sets the backend Socket.IO server URL. If omitted, development falls back to `http://localhost:3001` and production uses the current site origin.
+
 ### Backend
 
 ```sh

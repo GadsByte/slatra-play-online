@@ -1,53 +1,27 @@
-export type RoomStatus = 'waiting' | 'in_game';
-export type RoomVisibility = 'public' | 'private';
+import type {
+  CreateRoomRequestDto,
+  JoinRoomRequestDto,
+  LobbyRoomSummaryDto,
+  PlayerIdentityDto,
+  RoomDetailsDto,
+  RoomPlayerDto,
+  RoomStatus as SharedRoomStatus,
+  RoomVisibility as SharedRoomVisibility,
+} from '@slatra/shared';
 
-export interface PlayerIdentity {
-  id: string;
-  displayName: string;
-}
+export type RoomStatus = SharedRoomStatus;
+export type RoomVisibility = SharedRoomVisibility;
 
-export interface RoomPlayer {
-  id: string;
-  displayName: string;
-  ready: boolean;
-  joinedAt: string;
-}
+export type PlayerIdentity = PlayerIdentityDto;
+export type RoomPlayer = RoomPlayerDto;
+export type LobbyRoomSummary = LobbyRoomSummaryDto;
+export type RoomDetails = RoomDetailsDto;
 
-export interface LobbyRoomSummary {
-  id: string;
-  name: string;
-  code: string;
-  hostPlayerId: string;
-  hostDisplayName: string;
-  playerCount: number;
-  maxPlayers: number;
-  status: RoomStatus;
-  visibility: RoomVisibility;
-}
-
-export interface RoomDetails {
-  id: string;
-  name: string;
-  code: string;
-  hostPlayerId: string;
-  maxPlayers: number;
-  status: RoomStatus;
-  visibility: RoomVisibility;
-  players: RoomPlayer[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CreateRoomInput {
-  name: string;
-  visibility: RoomVisibility;
-}
-
-export interface JoinRoomInput {
-  roomIdOrCode: string;
-}
+export type CreateRoomInput = CreateRoomRequestDto;
+export type JoinRoomInput = JoinRoomRequestDto;
 
 export interface MultiplayerSnapshot {
   identity: PlayerIdentity | null;
-  rooms: RoomDetails[];
+  rooms: LobbyRoomSummary[];
+  roomStates: RoomDetails[];
 }

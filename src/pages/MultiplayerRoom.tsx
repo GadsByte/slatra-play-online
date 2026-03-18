@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -7,7 +7,6 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
-import { RoomDetails } from '@/features/multiplayer/types';
 
 const MultiplayerRoom = () => {
   const navigate = useNavigate();
@@ -15,15 +14,20 @@ const MultiplayerRoom = () => {
   const {
     identity,
     loading,
-    getRoomByIdOrCode,
+    findRoomByIdOrCode,
     setReadyState,
     leaveRoom,
     joinRoom,
   } = useMultiplayer();
 
-  const [room, setRoom] = useState<RoomDetails | null>(null);
+  const room = useMemo(() => {
+    if (!roomId) return null;
+    return findRoomByIdOrCode(roomId);
+  }, [findRoomByIdOrCode, roomId]);
+
   const [roomLoading, setRoomLoading] = useState(true);
   const [actionPending, setActionPending] = useState(false);
+  const attemptedJoinRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!loading && !identity) {
@@ -32,22 +36,44 @@ const MultiplayerRoom = () => {
   }, [identity, loading, navigate]);
 
   useEffect(() => {
+    attemptedJoinRef.current = null;
+    setRoomLoading(true);
+  }, [roomId]);
+
+  useEffect(() => {
     let cancelled = false;
 
     const loadRoom = async () => {
       if (!roomId || !identity) {
-        setRoom(null);
         setRoomLoading(false);
         return;
       }
 
-      setRoomLoading(true);
-      const joinedRoom = await joinRoom(roomId);
-      const resolvedRoom = joinedRoom ?? await getRoomByIdOrCode(roomId);
-
-      if (!cancelled) {
-        setRoom(resolvedRoom);
+      if (room) {
         setRoomLoading(false);
+        return;
+      }
+
+      if (attemptedJoinRef.current === roomId) {
+        setRoomLoading(false);
+        return;
+      }
+
+      attemptedJoinRef.current = roomId;
+      setRoomLoading(true);
+
+      try {
+        await joinRoom(roomId);
+      } catch (error) {
+        if (!cancelled) {
+          toast('Unable to load room', {
+            description: error instanceof Error ? error.message : 'Try again in a moment.',
+          });
+        }
+      } finally {
+        if (!cancelled) {
+          setRoomLoading(false);
+        }
       }
     };
 
@@ -58,7 +84,7 @@ const MultiplayerRoom = () => {
     return () => {
       cancelled = true;
     };
-  }, [getRoomByIdOrCode, identity, joinRoom, loading, roomId]);
+  }, [identity, joinRoom, loading, room, roomId]);
 
   const currentPlayer = useMemo(() => {
     if (!identity || !room) return null;
@@ -71,9 +97,16 @@ const MultiplayerRoom = () => {
   const handleReadyChange = async (nextReady: boolean) => {
     if (!room) return;
     setActionPending(true);
-    const updatedRoom = await setReadyState(room.id, nextReady);
-    if (updatedRoom) setRoom(updatedRoom);
-    setActionPending(false);
+
+    try {
+      await setReadyState(room.id, nextReady);
+    } catch (error) {
+      toast('Unable to update ready state', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setActionPending(false);
+    }
   };
 
   const handleLeaveRoom = async () => {
@@ -83,9 +116,17 @@ const MultiplayerRoom = () => {
     }
 
     setActionPending(true);
-    await leaveRoom(room.id);
-    setActionPending(false);
-    navigate('/multiplayer/lobby');
+
+    try {
+      await leaveRoom(room.id);
+      navigate('/multiplayer/lobby');
+    } catch (error) {
+      toast('Unable to leave room', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setActionPending(false);
+    }
   };
 
   const handleStartGame = () => {
@@ -107,7 +148,7 @@ const MultiplayerRoom = () => {
       <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4 px-4 text-center">
         <h1 className="font-display text-3xl tracking-widest text-foreground">ROOM NOT FOUND</h1>
         <p className="font-body text-muted-foreground max-w-md">
-          This room no longer exists in mock mode, or the room code is invalid.
+          This room no longer exists, or the room code is invalid.
         </p>
         <Button onClick={() => navigate('/multiplayer/lobby')} className="font-display tracking-wider">
           RETURN TO LOBBY

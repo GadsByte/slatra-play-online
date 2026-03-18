@@ -44,9 +44,17 @@ const MultiplayerLobby = () => {
     if (!trimmed) return;
 
     setSubmitting(true);
-    await saveDisplayName(trimmed);
-    setEditingName(false);
-    setSubmitting(false);
+
+    try {
+      await saveDisplayName(trimmed);
+      setEditingName(false);
+    } catch (error) {
+      toast('Unable to save name', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleCreateRoom = async () => {
@@ -54,35 +62,51 @@ const MultiplayerLobby = () => {
     if (!trimmed) return;
 
     setSubmitting(true);
-    const room = await createRoom(trimmed, newRoomPrivate ? 'private' : 'public');
-    setCreateOpen(false);
-    setNewRoomName('');
-    setNewRoomPrivate(false);
-    setSubmitting(false);
-    navigate(`/multiplayer/room/${room.id}`);
+
+    try {
+      const room = await createRoom(trimmed, newRoomPrivate ? 'private' : 'public');
+      setCreateOpen(false);
+      setNewRoomName('');
+      setNewRoomPrivate(false);
+      navigate(`/multiplayer/room/${room.id}`);
+    } catch (error) {
+      toast('Unable to create room', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleJoin = async (roomIdOrCode: string) => {
     setSubmitting(true);
-    const room = await joinRoom(roomIdOrCode);
-    setSubmitting(false);
 
-    if (!room) {
-      toast('Room not found', {
-        description: 'That room no longer exists in mock mode.',
+    try {
+      const room = await joinRoom(roomIdOrCode);
+
+      if (!room) {
+        toast('Room not found', {
+          description: 'That room no longer exists.',
+        });
+        return;
+      }
+
+      const currentPlayer = room.players.find(player => player.id === identity?.id);
+      if (!currentPlayer && room.players.length >= room.maxPlayers) {
+        toast('Room is full', {
+          description: 'This room already has two players.',
+        });
+        return;
+      }
+
+      navigate(`/multiplayer/room/${room.id}`);
+    } catch (error) {
+      toast('Unable to join room', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
       });
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    const currentPlayer = room.players.find(player => player.id === identity?.id);
-    if (!currentPlayer && room.players.length >= room.maxPlayers) {
-      toast('Room is full', {
-        description: 'This room already has two players.',
-      });
-      return;
-    }
-
-    navigate(`/multiplayer/room/${room.id}`);
   };
 
   const handleJoinPrivate = async () => {
@@ -90,27 +114,35 @@ const MultiplayerLobby = () => {
     if (!trimmed) return;
 
     setSubmitting(true);
-    const room = await joinRoom(trimmed);
-    setSubmitting(false);
 
-    if (!room) {
-      toast('Room not found', {
-        description: 'Check the room code and try again.',
+    try {
+      const room = await joinRoom(trimmed);
+
+      if (!room) {
+        toast('Room not found', {
+          description: 'Check the room code and try again.',
+        });
+        return;
+      }
+
+      const currentPlayer = room.players.find(player => player.id === identity?.id);
+      if (!currentPlayer && room.players.length >= room.maxPlayers) {
+        toast('Room is full', {
+          description: 'This room already has two players.',
+        });
+        return;
+      }
+
+      setJoinPrivateOpen(false);
+      setPrivateCode('');
+      navigate(`/multiplayer/room/${room.id}`);
+    } catch (error) {
+      toast('Unable to join room', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
       });
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    const currentPlayer = room.players.find(player => player.id === identity?.id);
-    if (!currentPlayer && room.players.length >= room.maxPlayers) {
-      toast('Room is full', {
-        description: 'This room already has two players.',
-      });
-      return;
-    }
-
-    setJoinPrivateOpen(false);
-    setPrivateCode('');
-    navigate(`/multiplayer/room/${room.id}`);
   };
 
   if (loading) {

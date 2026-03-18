@@ -7,7 +7,7 @@ import {
   useMemo,
   useState,
 } from 'react';
-import { multiplayerClient } from './client';
+import { createConfiguredMultiplayerClient, type MultiplayerClient } from './client';
 import { LobbyRoomSummary, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
 
 interface MultiplayerContextValue {
@@ -19,45 +19,62 @@ interface MultiplayerContextValue {
   createRoom: (name: string, visibility: RoomVisibility) => Promise<RoomDetails>;
   joinRoom: (roomIdOrCode: string) => Promise<RoomDetails | null>;
   leaveRoom: (roomId: string) => Promise<void>;
-  getRoomByIdOrCode: (roomIdOrCode: string) => Promise<RoomDetails | null>;
+  findRoomByIdOrCode: (roomIdOrCode: string) => RoomDetails | null;
   setReadyState: (roomId: string, nextReady: boolean) => Promise<RoomDetails | null>;
   refreshRooms: () => Promise<void>;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
 
+function normalizeLookup(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeCode(value: string) {
+  return value.trim().toUpperCase();
+}
+
 export function MultiplayerProvider({ children }: { children: ReactNode }) {
+  const [client] = useState<MultiplayerClient>(() => createConfiguredMultiplayerClient());
   const [identity, setIdentity] = useState<PlayerIdentity | null>(null);
   const [rooms, setRooms] = useState<LobbyRoomSummary[]>([]);
+  const [roomStates, setRoomStates] = useState<RoomDetails[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const refreshRooms = useCallback(async () => {
-    const nextRooms = await multiplayerClient.listRooms();
-    setRooms(nextRooms);
+  const applySnapshot = useCallback((snapshot: {
+    identity: PlayerIdentity | null;
+    rooms: LobbyRoomSummary[];
+    roomStates: RoomDetails[];
+  }) => {
+    setIdentity(snapshot.identity);
+    setRooms(snapshot.rooms);
+    setRoomStates(snapshot.roomStates);
   }, []);
+
+  const refreshRooms = useCallback(async () => {
+    await client.listRooms();
+  }, [client]);
 
   useEffect(() => {
     let cancelled = false;
 
+    const unsubscribe = client.subscribe(snapshot => {
+      if (cancelled) return;
+      applySnapshot(snapshot);
+    });
+
     const load = async () => {
       setLoading(true);
-      const snapshot = await multiplayerClient.loadSnapshot();
-      const nextRooms = snapshot.rooms.map(room => ({
-        id: room.id,
-        name: room.name,
-        code: room.code,
-        hostPlayerId: room.hostPlayerId,
-        hostDisplayName: room.players.find(player => player.id === room.hostPlayerId)?.displayName ?? 'Unknown Host',
-        playerCount: room.players.length,
-        maxPlayers: room.maxPlayers,
-        status: room.status,
-        visibility: room.visibility,
-      }));
 
-      if (!cancelled) {
-        setIdentity(snapshot.identity);
-        setRooms(nextRooms);
-        setLoading(false);
+      try {
+        const snapshot = await client.loadSnapshot();
+        if (!cancelled) {
+          applySnapshot(snapshot);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
@@ -65,42 +82,49 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
-  }, []);
+  }, [applySnapshot, client]);
+
+  const roomLookup = useMemo(() => {
+    const index = new Map<string, RoomDetails>();
+
+    roomStates.forEach(room => {
+      index.set(room.id, room);
+      index.set(room.code, room);
+      index.set(normalizeLookup(room.id), room);
+      index.set(normalizeCode(room.code), room);
+    });
+
+    return index;
+  }, [roomStates]);
 
   const saveDisplayName = useCallback(async (displayName: string) => {
-    const nextIdentity = await multiplayerClient.saveDisplayName(displayName);
-    setIdentity(nextIdentity);
-    await refreshRooms();
-    return nextIdentity;
-  }, [refreshRooms]);
+    return client.saveDisplayName(displayName);
+  }, [client]);
 
   const createRoom = useCallback(async (name: string, visibility: RoomVisibility) => {
-    const room = await multiplayerClient.createRoom({ name, visibility });
-    await refreshRooms();
-    return room;
-  }, [refreshRooms]);
+    return client.createRoom({ name, visibility });
+  }, [client]);
 
   const joinRoom = useCallback(async (roomIdOrCode: string) => {
-    const room = await multiplayerClient.joinRoom({ roomIdOrCode });
-    await refreshRooms();
-    return room;
-  }, [refreshRooms]);
+    return client.joinRoom({ roomIdOrCode });
+  }, [client]);
 
   const leaveRoom = useCallback(async (roomId: string) => {
-    await multiplayerClient.leaveRoom(roomId);
-    await refreshRooms();
-  }, [refreshRooms]);
+    await client.leaveRoom(roomId);
+  }, [client]);
 
-  const getRoomByIdOrCode = useCallback(async (roomIdOrCode: string) => {
-    return multiplayerClient.getRoom(roomIdOrCode);
-  }, []);
+  const findRoomByIdOrCode = useCallback((roomIdOrCode: string) => {
+    return roomLookup.get(normalizeLookup(roomIdOrCode))
+      ?? roomLookup.get(normalizeCode(roomIdOrCode))
+      ?? roomLookup.get(roomIdOrCode)
+      ?? null;
+  }, [roomLookup]);
 
   const setReadyState = useCallback(async (roomId: string, nextReady: boolean) => {
-    const room = await multiplayerClient.setReady(roomId, nextReady);
-    await refreshRooms();
-    return room;
-  }, [refreshRooms]);
+    return client.setReady(roomId, nextReady);
+  }, [client]);
 
   const value = useMemo<MultiplayerContextValue>(() => ({
     identity,
@@ -111,7 +135,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     createRoom,
     joinRoom,
     leaveRoom,
-    getRoomByIdOrCode,
+    findRoomByIdOrCode,
     setReadyState,
     refreshRooms,
   }), [
@@ -122,7 +146,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     createRoom,
     joinRoom,
     leaveRoom,
-    getRoomByIdOrCode,
+    findRoomByIdOrCode,
     setReadyState,
     refreshRooms,
   ]);

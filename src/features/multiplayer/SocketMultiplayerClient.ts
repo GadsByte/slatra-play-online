@@ -49,6 +49,8 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
   private pendingRequest: PendingRequest | null = null;
 
+  private sessionRestorePromise: Promise<void> | null = null;
+
   private identity: PlayerIdentityDto | null = getStoredIdentity();
 
   private sessionReady = false;
@@ -72,12 +74,6 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
   async loadSnapshot(): Promise<MultiplayerSnapshot> {
     await this.ensureSocket();
-
-    const storedIdentity = getStoredIdentity();
-    if (storedIdentity?.displayName && (!this.sessionReady || this.identity?.displayName !== storedIdentity.displayName)) {
-      await this.saveDisplayName(storedIdentity.displayName);
-    }
-
     await this.listRooms();
     return this.getSnapshot();
   }
@@ -209,8 +205,13 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     this.connectPromise = new Promise<void>((resolve, reject) => {
       const handleConnect = () => {
         cleanup();
-        this.connectPromise = null;
-        resolve();
+        void this.restoreStoredSession().then(() => {
+          this.connectPromise = null;
+          resolve();
+        }).catch(error => {
+          this.connectPromise = null;
+          reject(error);
+        });
       };
 
       const handleError = (error: Error) => {
@@ -233,6 +234,11 @@ export class SocketMultiplayerClient implements MultiplayerClient {
   }
 
   private bindSocketEvents(socket: Socket<ServerToClientEvents, ClientToServerEvents>) {
+    socket.on('connect', () => {
+      this.sessionReady = false;
+      void this.restoreStoredSession();
+    });
+
     socket.on('session:ready', payload => {
       this.identity = persistIdentity(payload.player);
       this.sessionReady = true;
@@ -389,5 +395,45 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     window.clearTimeout(timeoutId);
     this.pendingRequest = null;
     reject(error);
+  }
+
+  private async restoreStoredSession() {
+    if (this.sessionRestorePromise) {
+      return this.sessionRestorePromise;
+    }
+
+    if (!this.socket?.connected) {
+      return;
+    }
+
+    this.sessionRestorePromise = (async () => {
+      const storedIdentity = getStoredIdentity();
+      if (!storedIdentity?.displayName) {
+        this.identity = storedIdentity ?? null;
+        this.emitSnapshot();
+        return;
+      }
+
+      const identity = persistIdentity(createIdentity(storedIdentity.displayName, storedIdentity));
+      this.identity = identity;
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'session:set-name') {
+        return;
+      }
+
+      await this.beginRequest<PlayerIdentityDto>({ kind: 'session:set-name' }, () => {
+        this.socket!.emit('session:set-name', {
+          displayName: identity.displayName,
+          sessionToken: identity.sessionToken,
+        });
+      });
+    })();
+
+    try {
+      await this.sessionRestorePromise;
+    } finally {
+      this.sessionRestorePromise = null;
+    }
   }
 }

@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { createConfiguredMultiplayerClient, type MultiplayerClient } from './client';
-import { LobbyRoomSummary, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
+import { LobbyRoomSummary, MatchSnapshot, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
 
 interface MultiplayerContextValue {
   identity: PlayerIdentity | null;
@@ -20,7 +20,9 @@ interface MultiplayerContextValue {
   joinRoom: (roomIdOrCode: string) => Promise<RoomDetails | null>;
   leaveRoom: (roomId: string) => Promise<void>;
   findRoomByIdOrCode: (roomIdOrCode: string) => RoomDetails | null;
+  findMatchByRoomId: (roomId: string) => MatchSnapshot | null;
   setReadyState: (roomId: string, nextReady: boolean) => Promise<RoomDetails | null>;
+  startMatch: (roomId: string) => Promise<MatchSnapshot | null>;
   refreshRooms: () => Promise<void>;
 }
 
@@ -39,16 +41,19 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [identity, setIdentity] = useState<PlayerIdentity | null>(null);
   const [rooms, setRooms] = useState<LobbyRoomSummary[]>([]);
   const [roomStates, setRoomStates] = useState<RoomDetails[]>([]);
+  const [matchStates, setMatchStates] = useState<MatchSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
 
   const applySnapshot = useCallback((snapshot: {
     identity: PlayerIdentity | null;
     rooms: LobbyRoomSummary[];
     roomStates: RoomDetails[];
+    matchStates: MatchSnapshot[];
   }) => {
     setIdentity(snapshot.identity);
     setRooms(snapshot.rooms);
     setRoomStates(snapshot.roomStates);
+    setMatchStates(snapshot.matchStates);
   }, []);
 
   const refreshRooms = useCallback(async () => {
@@ -99,6 +104,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     return index;
   }, [roomStates]);
 
+  const matchLookup = useMemo(() => {
+    return new Map(matchStates.map(match => [match.roomId, match]));
+  }, [matchStates]);
+
   const saveDisplayName = useCallback(async (displayName: string) => {
     return client.saveDisplayName(displayName);
   }, [client]);
@@ -122,8 +131,16 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
       ?? null;
   }, [roomLookup]);
 
+  const findMatchByRoomId = useCallback((roomId: string) => {
+    return matchLookup.get(roomId) ?? null;
+  }, [matchLookup]);
+
   const setReadyState = useCallback(async (roomId: string, nextReady: boolean) => {
     return client.setReady(roomId, nextReady);
+  }, [client]);
+
+  const startMatch = useCallback(async (roomId: string) => {
+    return client.startMatch(roomId);
   }, [client]);
 
   const value = useMemo<MultiplayerContextValue>(() => ({
@@ -136,7 +153,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     findRoomByIdOrCode,
+    findMatchByRoomId,
     setReadyState,
+    startMatch,
     refreshRooms,
   }), [
     identity,
@@ -147,7 +166,9 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     joinRoom,
     leaveRoom,
     findRoomByIdOrCode,
+    findMatchByRoomId,
     setReadyState,
+    startMatch,
     refreshRooms,
   ]);
 

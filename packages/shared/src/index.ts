@@ -12,4 +12,4 @@ export interface HealthResponseDto {
   transport: 'socket.io';
 }
 
-export * from './multiplayer';
+export * from './multiplayer.js';

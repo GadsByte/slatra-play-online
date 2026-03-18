@@ -28,12 +28,15 @@ interface RoomRecord {
   maxPlayers: number;
   status: 'waiting' | 'in_game';
   visibility: RoomVisibility;
+  activeMatchId: string | null;
   players: Map<string, RoomPlayerDto>;
 }
 
 interface MutationResult {
   updatedRoomIds: string[];
   leftRoomId?: string;
+  removedRoomIds?: string[];
+  clearedMatchRoomIds?: string[];
 }
 
 function createRoomCode(): string {
@@ -102,6 +105,7 @@ export class RoomStore {
         maxPlayers: room.maxPlayers,
         status: room.status,
         visibility: room.visibility,
+        activeMatchId: room.activeMatchId,
       };
     });
   }
@@ -138,6 +142,7 @@ export class RoomStore {
       maxPlayers: DEFAULT_ROOM_SIZE,
       status: 'waiting',
       visibility: input.visibility,
+      activeMatchId: null,
       players: new Map([
         [player.id, { id: player.id, displayName: player.displayName, ready: false }],
       ]),
@@ -147,9 +152,11 @@ export class RoomStore {
     player.roomId = room.id;
 
     const updatedRoomIds = [...(leaveResult.changes?.updatedRoomIds ?? []), room.id];
+    const removedRoomIds = leaveResult.changes?.removedRoomIds ?? [];
+    const clearedMatchRoomIds = leaveResult.changes?.clearedMatchRoomIds ?? [];
     return {
       room: this.toRoomDetails(room),
-      changes: { updatedRoomIds, leftRoomId: leaveResult.changes?.leftRoomId },
+      changes: { updatedRoomIds, leftRoomId: leaveResult.changes?.leftRoomId, removedRoomIds, clearedMatchRoomIds },
     };
   }
 
@@ -180,9 +187,11 @@ export class RoomStore {
     player.roomId = room.id;
 
     const updatedRoomIds = [...(leaveResult.changes?.updatedRoomIds ?? []), room.id];
+    const removedRoomIds = leaveResult.changes?.removedRoomIds ?? [];
+    const clearedMatchRoomIds = leaveResult.changes?.clearedMatchRoomIds ?? [];
     return {
       room: this.toRoomDetails(room),
-      changes: { updatedRoomIds, leftRoomId: leaveResult.changes?.leftRoomId },
+      changes: { updatedRoomIds, leftRoomId: leaveResult.changes?.leftRoomId, removedRoomIds, clearedMatchRoomIds },
     };
   }
 
@@ -210,17 +219,33 @@ export class RoomStore {
 
     if (room.players.size === 0) {
       this.rooms.delete(room.id);
-      updatedRoomIds.push(room.id);
-      return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id } };
+      return {
+        roomId: room.id,
+        changes: {
+          updatedRoomIds: [room.id],
+          removedRoomIds: [room.id],
+          clearedMatchRoomIds: room.activeMatchId ? [room.id] : [],
+          leftRoomId: room.id,
+        },
+      };
     }
 
     if (room.hostPlayerId === player.id) {
       room.hostPlayerId = room.players.keys().next().value as string;
     }
 
+    const clearedMatchRoomIds = room.activeMatchId ? [room.id] : [];
+    if (room.activeMatchId) {
+      room.status = 'waiting';
+      room.activeMatchId = null;
+      room.players.forEach((existingPlayer, existingPlayerId) => {
+        room.players.set(existingPlayerId, { ...existingPlayer, ready: false });
+      });
+    }
+
     updatedRoomIds.push(room.id);
 
-    return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id } };
+    return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id, clearedMatchRoomIds } };
   }
 
   setReady(socketId: string, input: SetReadyRequestDto): { room?: RoomDetailsDto; changes?: MutationResult; error?: RoomErrorPayload } {
@@ -241,21 +266,28 @@ export class RoomStore {
       displayName: player.displayName,
     });
 
-    return {
-      room: this.toRoomDetails(room),
-      changes: { updatedRoomIds: [room.id] },
-    };
+    return { room: this.toRoomDetails(room), changes: { updatedRoomIds: [room.id] } };
   }
 
-  disconnect(socketId: string) {
-    const player = this.getPlayer(socketId);
+  markRoomInGame(roomId: RoomId, matchId: string): RoomDetailsDto | null {
+    const room = this.rooms.get(roomId);
+    if (!room) return null;
+
+    room.status = 'in_game';
+    room.activeMatchId = matchId;
+
+    return this.toRoomDetails(room);
+  }
+
+  disconnect(socketId: string): { changes?: MutationResult } {
+    const player = this.playersBySocket.get(socketId);
     if (!player) {
       return { changes: { updatedRoomIds: [] } };
     }
 
-    const leaveResult = this.leaveRoom(socketId, player.roomId ?? undefined);
+    const result = player.roomId ? this.leaveRoom(socketId, player.roomId) : { changes: { updatedRoomIds: [] } };
     this.playersBySocket.delete(socketId);
-    return leaveResult;
+    return { changes: result.changes };
   }
 
   private toRoomDetails(room: RoomRecord): RoomDetailsDto {
@@ -267,6 +299,7 @@ export class RoomStore {
       maxPlayers: room.maxPlayers,
       status: room.status,
       visibility: room.visibility,
+      activeMatchId: room.activeMatchId,
       players: Array.from(room.players.values()),
     };
   }

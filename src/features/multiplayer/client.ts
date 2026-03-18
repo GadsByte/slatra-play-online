@@ -2,17 +2,26 @@ import type {
   ClientToServerEvents,
   ServerToClientEvents,
 } from '@slatra/shared';
+import { createInitialMatchGameState } from '@slatra/shared';
 import { io, type Socket } from 'socket.io-client';
 import {
   CreateRoomInput,
   JoinRoomInput,
   LobbyRoomSummary,
+  MatchSnapshot,
   MultiplayerSnapshot,
   PlayerIdentity,
   RoomDetails,
   RoomPlayer,
 } from './types';
-import { loadStoredIdentity, loadStoredRooms, saveStoredIdentity, saveStoredRooms } from './storage';
+import {
+  loadStoredIdentity,
+  loadStoredMatches,
+  loadStoredRooms,
+  saveStoredIdentity,
+  saveStoredMatches,
+  saveStoredRooms,
+} from './storage';
 
 export type MultiplayerSnapshotListener = (snapshot: MultiplayerSnapshot) => void;
 export type MultiplayerTransport = 'local' | 'socket';
@@ -23,10 +32,12 @@ export interface MultiplayerClient {
   saveDisplayName(displayName: string): Promise<PlayerIdentity>;
   listRooms(): Promise<LobbyRoomSummary[]>;
   getRoom(roomIdOrCode: string): Promise<RoomDetails | null>;
+  getMatch(roomId: string): Promise<MatchSnapshot | null>;
   createRoom(input: CreateRoomInput): Promise<RoomDetails>;
   joinRoom(input: JoinRoomInput): Promise<RoomDetails | null>;
   leaveRoom(roomId: string): Promise<void>;
   setReady(roomId: string, ready: boolean): Promise<RoomDetails | null>;
+  startMatch(roomId: string): Promise<MatchSnapshot | null>;
 }
 
 interface PendingRequest<TValue = unknown> {
@@ -36,7 +47,8 @@ interface PendingRequest<TValue = unknown> {
     | 'room:create'
     | 'room:join'
     | 'room:leave'
-    | 'room:set-ready';
+    | 'room:set-ready'
+    | 'room:start-match';
   resolve: (value: TValue) => void;
   reject: (reason?: unknown) => void;
   timeoutId: ReturnType<typeof window.setTimeout>;
@@ -83,6 +95,7 @@ function seedRooms(): RoomDetails[] {
       maxPlayers: 2,
       status: 'waiting',
       visibility: 'public',
+      activeMatchId: null,
       players: [
         { id: 'npc-wulfgrim', displayName: 'Wulfgrim', ready: false },
       ],
@@ -95,6 +108,7 @@ function seedRooms(): RoomDetails[] {
       maxPlayers: 2,
       status: 'in_game',
       visibility: 'public',
+      activeMatchId: 'match-bone-throne',
       players: [
         { id: 'npc-skullcrusher', displayName: 'Skullcrusher', ready: true },
         { id: 'npc-rattlemaw', displayName: 'Rattlemaw', ready: true },
@@ -108,9 +122,22 @@ function seedRooms(): RoomDetails[] {
       maxPlayers: 2,
       status: 'waiting',
       visibility: 'private',
+      activeMatchId: null,
       players: [
         { id: 'npc-rotface', displayName: 'Rotface', ready: false },
       ],
+    },
+  ];
+}
+
+function seedMatches(): MatchSnapshot[] {
+  return [
+    {
+      id: 'match-bone-throne',
+      roomId: 'room-bone-throne',
+      status: 'active',
+      gameState: createInitialMatchGameState(),
+      createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
     },
   ];
 }
@@ -121,6 +148,15 @@ function ensureRooms(): RoomDetails[] {
 
   const seeded = seedRooms();
   saveStoredRooms(seeded);
+  return seeded;
+}
+
+function ensureMatches(): MatchSnapshot[] {
+  const stored = loadStoredMatches();
+  if (stored.length > 0) return stored;
+
+  const seeded = seedMatches();
+  saveStoredMatches(seeded);
   return seeded;
 }
 
@@ -137,6 +173,7 @@ function toLobbySummary(room: RoomDetails): LobbyRoomSummary {
     maxPlayers: room.maxPlayers,
     status: room.status,
     visibility: room.visibility,
+    activeMatchId: room.activeMatchId,
   };
 }
 
@@ -145,11 +182,17 @@ function persistRooms(rooms: RoomDetails[]) {
   return rooms;
 }
 
-function createSnapshot(identity: PlayerIdentity | null, roomStates: RoomDetails[]): MultiplayerSnapshot {
+function persistMatches(matches: MatchSnapshot[]) {
+  saveStoredMatches(matches);
+  return matches;
+}
+
+function createSnapshot(identity: PlayerIdentity | null, roomStates: RoomDetails[], matchStates: MatchSnapshot[]): MultiplayerSnapshot {
   return {
     identity,
     rooms: roomStates.map(toLobbySummary),
     roomStates,
+    matchStates,
   };
 }
 
@@ -213,6 +256,10 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return ensureRooms().find(room => room.id === lookup || room.code === code) ?? null;
   }
 
+  async getMatch(roomId: string): Promise<MatchSnapshot | null> {
+    return ensureMatches().find(match => match.roomId === roomId) ?? null;
+  }
+
   async createRoom(input: CreateRoomInput): Promise<RoomDetails> {
     const identity = getStoredIdentity();
     if (!identity) {
@@ -227,6 +274,7 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       maxPlayers: 2,
       status: 'waiting',
       visibility: input.visibility,
+      activeMatchId: null,
       players: [createPlayer(identity)],
     };
 
@@ -289,15 +337,19 @@ export class LocalMultiplayerClient implements MultiplayerClient {
           const nextHostId = existingRoom.hostPlayerId === identity.id
             ? remainingPlayers[0]?.id ?? existingRoom.hostPlayerId
             : existingRoom.hostPlayerId;
+          const matchEnded = !!existingRoom.activeMatchId;
 
           return {
             ...existingRoom,
             hostPlayerId: nextHostId,
-            players: remainingPlayers,
+            status: matchEnded ? 'waiting' : existingRoom.status,
+            activeMatchId: matchEnded ? null : existingRoom.activeMatchId,
+            players: remainingPlayers.map(player => (matchEnded ? { ...player, ready: false } : player)),
           };
         });
 
     persistRooms(nextRooms);
+    persistMatches(ensureMatches().filter(match => match.roomId !== roomId));
     this.emitSnapshot();
   }
 
@@ -328,8 +380,59 @@ export class LocalMultiplayerClient implements MultiplayerClient {
     return nextRoom;
   }
 
+  async startMatch(roomId: string): Promise<MatchSnapshot | null> {
+    const identity = getStoredIdentity();
+    if (!identity) {
+      throw new Error('A display name is required before starting a match.');
+    }
+
+    const rooms = ensureRooms();
+    const roomIndex = rooms.findIndex(room => room.id === roomId);
+    if (roomIndex < 0) return null;
+
+    const room = rooms[roomIndex];
+    const currentPlayer = room.players.find(player => player.id === identity.id);
+    if (!currentPlayer) {
+      throw new Error('You are not in that room.');
+    }
+    if (room.hostPlayerId !== identity.id) {
+      throw new Error('Only the host can start the match.');
+    }
+    if (room.players.length !== room.maxPlayers) {
+      throw new Error('Both players must be present before starting the match.');
+    }
+    if (!room.players.every(player => player.ready)) {
+      throw new Error('Both players must be ready before starting the match.');
+    }
+
+    const existingMatch = ensureMatches().find(match => match.roomId === roomId);
+    if (existingMatch) {
+      return existingMatch;
+    }
+
+    const match: MatchSnapshot = {
+      id: createId('match'),
+      roomId,
+      status: 'active',
+      gameState: createInitialMatchGameState(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const nextRooms = [...rooms];
+    nextRooms[roomIndex] = {
+      ...room,
+      status: 'in_game',
+      activeMatchId: match.id,
+    };
+
+    persistRooms(nextRooms);
+    persistMatches([...ensureMatches(), match]);
+    this.emitSnapshot();
+    return match;
+  }
+
   private getSnapshot() {
-    return createSnapshot(getStoredIdentity(), ensureRooms());
+    return createSnapshot(getStoredIdentity(), ensureRooms(), ensureMatches());
   }
 
   private emitSnapshot() {
@@ -354,6 +457,8 @@ export class SocketMultiplayerClient implements MultiplayerClient {
   private rooms: LobbyRoomSummary[] = [];
 
   private roomStates = new Map<string, RoomDetails>();
+
+  private matchStates = new Map<string, MatchSnapshot>();
 
   constructor(private readonly serverUrl = 'http://localhost:3001') {}
 
@@ -406,6 +511,10 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     return Array.from(this.roomStates.values()).find(room => room.id === lookup || room.code === code) ?? null;
   }
 
+  async getMatch(roomId: string): Promise<MatchSnapshot | null> {
+    return this.matchStates.get(roomId) ?? null;
+  }
+
   async createRoom(input: CreateRoomInput): Promise<RoomDetails> {
     const trimmedName = input.name.trim();
     if (!trimmedName) {
@@ -448,11 +557,20 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     });
   }
 
+  async startMatch(roomId: string): Promise<MatchSnapshot | null> {
+    await this.ensureSocket();
+
+    return this.beginRequest<MatchSnapshot | null>({ kind: 'room:start-match', roomId }, () => {
+      this.socket!.emit('room:start-match', { roomId });
+    });
+  }
+
   private getSnapshot(): MultiplayerSnapshot {
     return {
       identity: this.identity,
       rooms: this.rooms,
       roomStates: Array.from(this.roomStates.values()),
+      matchStates: Array.from(this.matchStates.values()),
     };
   }
 
@@ -521,6 +639,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     socket.on('lobby:rooms', payload => {
       this.rooms = payload.rooms;
       this.pruneRoomStates();
+      this.pruneMatchStates();
       this.emitSnapshot();
 
       if (this.pendingRequest?.kind === 'lobby:list-rooms') {
@@ -530,6 +649,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
       if (this.pendingRequest?.kind === 'room:leave' && this.pendingRequest.roomId) {
         this.roomStates.delete(this.pendingRequest.roomId);
+        this.matchStates.delete(this.pendingRequest.roomId);
         this.emitSnapshot();
         this.resolvePending(undefined);
       }
@@ -546,6 +666,15 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
       if (this.pendingRequest?.kind === 'room:set-ready' && this.pendingRequest.roomId === payload.room.id) {
         this.resolvePending(payload.room);
+      }
+    });
+
+    socket.on('match:state', payload => {
+      this.matchStates.set(payload.match.roomId, payload.match);
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'room:start-match' && this.pendingRequest.roomId === payload.match.roomId) {
+        this.resolvePending(payload.match);
       }
     });
 
@@ -567,6 +696,15 @@ export class SocketMultiplayerClient implements MultiplayerClient {
       console.error('[multiplayer] room:error', payload.message);
     });
 
+    socket.on('match:error', payload => {
+      if (this.pendingRequest?.kind === 'room:start-match') {
+        this.rejectPending(new Error(payload.message));
+        return;
+      }
+
+      console.error('[multiplayer] match:error', payload.message);
+    });
+
     socket.on('disconnect', () => {
       this.sessionReady = false;
       this.rejectPending(new Error('Disconnected from the multiplayer server.'));
@@ -578,6 +716,15 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     Array.from(this.roomStates.keys()).forEach(roomId => {
       if (!knownRoomIds.has(roomId)) {
         this.roomStates.delete(roomId);
+      }
+    });
+  }
+
+  private pruneMatchStates() {
+    const activeRoomIds = new Set(this.rooms.filter(room => room.activeMatchId).map(room => room.id));
+    Array.from(this.matchStates.keys()).forEach(roomId => {
+      if (!activeRoomIds.has(roomId)) {
+        this.matchStates.delete(roomId);
       }
     });
   }

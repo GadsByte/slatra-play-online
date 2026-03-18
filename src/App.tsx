@@ -10,6 +10,7 @@ import Rules from "./pages/Rules.tsx";
 import MultiplayerEntry from "./pages/MultiplayerEntry.tsx";
 import MultiplayerLobby from "./pages/MultiplayerLobby.tsx";
 import MultiplayerRoom from "./pages/MultiplayerRoom.tsx";
+import MultiplayerMatch from "./pages/MultiplayerMatch.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -28,6 +29,7 @@ const App = () => (
             <Route path="/multiplayer" element={<MultiplayerEntry />} />
             <Route path="/multiplayer/lobby" element={<MultiplayerLobby />} />
             <Route path="/multiplayer/room/:roomId" element={<MultiplayerRoom />} />
+            <Route path="/multiplayer/match/:roomId" element={<MultiplayerMatch />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

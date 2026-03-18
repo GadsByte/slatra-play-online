@@ -15,9 +15,11 @@ const MultiplayerRoom = () => {
     identity,
     loading,
     findRoomByIdOrCode,
+    findMatchByRoomId,
     setReadyState,
     leaveRoom,
     joinRoom,
+    startMatch,
   } = useMultiplayer();
 
   const room = useMemo(() => {
@@ -28,6 +30,11 @@ const MultiplayerRoom = () => {
   const [roomLoading, setRoomLoading] = useState(true);
   const [actionPending, setActionPending] = useState(false);
   const attemptedJoinRef = useRef<string | null>(null);
+
+  const match = useMemo(() => {
+    if (!roomId) return null;
+    return findMatchByRoomId(roomId);
+  }, [findMatchByRoomId, roomId]);
 
   useEffect(() => {
     if (!loading && !identity) {
@@ -86,6 +93,12 @@ const MultiplayerRoom = () => {
     };
   }, [identity, joinRoom, loading, room, roomId]);
 
+  useEffect(() => {
+    if (room?.status === 'in_game' && match) {
+      navigate(`/multiplayer/match/${room.id}`, { replace: true });
+    }
+  }, [match, navigate, room]);
+
   const currentPlayer = useMemo(() => {
     if (!identity || !room) return null;
     return room.players.find(player => player.id === identity.id) ?? null;
@@ -129,10 +142,23 @@ const MultiplayerRoom = () => {
     }
   };
 
-  const handleStartGame = () => {
-    toast('Online play coming soon', {
-      description: 'Multiplayer gameplay is not yet implemented, but the room state is now provider-backed.',
-    });
+  const handleStartGame = async () => {
+    if (!room) return;
+
+    setActionPending(true);
+
+    try {
+      const nextMatch = await startMatch(room.id);
+      if (nextMatch) {
+        navigate(`/multiplayer/match/${room.id}`);
+      }
+    } catch (error) {
+      toast('Unable to start match', {
+        description: error instanceof Error ? error.message : 'Try again in a moment.',
+      });
+    } finally {
+      setActionPending(false);
+    }
   };
 
   if (loading || roomLoading) {
@@ -218,8 +244,8 @@ const MultiplayerRoom = () => {
         {isHost && (
           <Button
             size="lg"
-            onClick={handleStartGame}
-            disabled={!canStart}
+            onClick={() => void handleStartGame()}
+            disabled={!canStart || actionPending}
             className="w-full font-display text-lg tracking-wider py-6"
           >
             START GAME

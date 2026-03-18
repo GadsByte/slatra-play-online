@@ -6,7 +6,7 @@ import {
   RoomDetailsDto,
   RoomPlayerDto,
 } from './types';
-import { createSessionToken, loadStoredIdentity, saveStoredIdentity } from './storage';
+import { createSessionToken, loadStoredIdentity, loadStoredSessionToken, saveStoredIdentity } from './storage';
 
 export type MultiplayerSnapshotListener = (snapshot: MultiplayerSnapshot) => void;
 export type MultiplayerTransport = 'local' | 'socket';
@@ -35,7 +35,7 @@ export function getStoredIdentity(): PlayerIdentityDto | null {
 export function createIdentity(displayName: string, existingIdentity?: PlayerIdentityDto | null): PlayerIdentityDto {
   return {
     id: existingIdentity?.id ?? createId('player'),
-    sessionToken: existingIdentity?.sessionToken ?? createSessionToken(),
+    sessionToken: existingIdentity?.sessionToken ?? loadStoredSessionToken() ?? createSessionToken(),
     displayName,
   };
 }

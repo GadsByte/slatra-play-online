@@ -2,6 +2,7 @@ import { MatchSnapshotDto, PlayerIdentityDto, RoomDetailsDto } from './types';
 
 const STORAGE_KEYS = {
   identity: 'slatra.multiplayer.identity',
+  sessionToken: 'slatra.multiplayer.session-token',
   rooms: 'slatra.multiplayer.rooms',
   matches: 'slatra.multiplayer.matches',
   legacyDisplayName: 'slatraDisplayName',
@@ -19,6 +20,18 @@ export function createSessionToken() {
   return `session-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+export function loadStoredSessionToken(): string | null {
+  if (!canUseStorage()) return null;
+
+  const storedToken = window.localStorage.getItem(STORAGE_KEYS.sessionToken)?.trim();
+  return storedToken || null;
+}
+
+function persistSessionToken(sessionToken: string) {
+  if (!canUseStorage()) return;
+  window.localStorage.setItem(STORAGE_KEYS.sessionToken, sessionToken);
+}
+
 export function loadStoredIdentity(): PlayerIdentityDto | null {
   if (!canUseStorage()) return null;
 
@@ -31,14 +44,17 @@ export function loadStoredIdentity(): PlayerIdentityDto | null {
         return null;
       }
 
+      const sessionToken = parsed.sessionToken?.trim() || loadStoredSessionToken() || createSessionToken();
       const identity: PlayerIdentityDto = {
         id: parsed.id,
         displayName: parsed.displayName,
-        sessionToken: parsed.sessionToken?.trim() || createSessionToken(),
+        sessionToken,
       };
 
       if (identity.sessionToken !== parsed.sessionToken) {
         saveStoredIdentity(identity);
+      } else {
+        persistSessionToken(identity.sessionToken);
       }
 
       return identity;
@@ -50,16 +66,20 @@ export function loadStoredIdentity(): PlayerIdentityDto | null {
   const legacyDisplayName = window.localStorage.getItem(STORAGE_KEYS.legacyDisplayName)?.trim();
   if (!legacyDisplayName) return null;
 
-  return {
+  const identity: PlayerIdentityDto = {
     id: 'player-legacy',
-    sessionToken: createSessionToken(),
+    sessionToken: loadStoredSessionToken() || createSessionToken(),
     displayName: legacyDisplayName,
   };
+
+  saveStoredIdentity(identity);
+  return identity;
 }
 
 export function saveStoredIdentity(identity: PlayerIdentityDto) {
   if (!canUseStorage()) return;
   window.localStorage.setItem(STORAGE_KEYS.identity, JSON.stringify(identity));
+  persistSessionToken(identity.sessionToken);
   window.localStorage.setItem(STORAGE_KEYS.legacyDisplayName, identity.displayName);
 }
 

@@ -17,7 +17,7 @@ const DISCONNECT_GRACE_PERIOD_MS = 10_000;
 
 interface PlayerSession {
   id: string;
-  sessionToken: string;
+  reconnectToken: string;
   socketId: string | null;
   displayName: string;
   roomId: string | null;
@@ -56,46 +56,51 @@ function normalizeCode(value: string) {
 }
 
 export class RoomStore {
-  private playersBySessionToken = new Map<string, PlayerSession>();
+  private sessionsByReconnectToken = new Map<string, PlayerSession>();
 
-  private sessionTokenBySocketId = new Map<string, string>();
+  private reconnectTokenBySocketId = new Map<string, string>();
 
   private rooms = new Map<string, RoomRecord>();
 
   constructor(private readonly onMutation?: (changes: MutationResult) => void) {}
 
   get connectionCount() {
-    return this.sessionTokenBySocketId.size;
+    return this.reconnectTokenBySocketId.size;
   }
 
   get roomCount() {
     return this.rooms.size;
   }
 
-  registerPlayer(socketId: string, sessionToken: string, displayName: string): PlayerIdentityDto {
+  registerPlayer(socketId: string, reconnectToken: string, displayName: string): PlayerIdentityDto {
     const trimmedDisplayName = displayName.trim();
-    const trimmedSessionToken = sessionToken.trim();
-    const existing = this.playersBySessionToken.get(trimmedSessionToken);
+    const trimmedReconnectToken = reconnectToken.trim();
+    const existing = this.sessionsByReconnectToken.get(trimmedReconnectToken);
 
     if (existing?.disconnectTimer) {
       clearTimeout(existing.disconnectTimer);
+      existing.disconnectTimer = null;
     }
 
     if (existing?.socketId && existing.socketId !== socketId) {
-      this.sessionTokenBySocketId.delete(existing.socketId);
+      this.reconnectTokenBySocketId.delete(existing.socketId);
     }
 
-    const session: PlayerSession = {
-      id: existing?.id ?? `player-${randomUUID()}`,
-      sessionToken: trimmedSessionToken,
-      socketId,
+    const session: PlayerSession = existing ?? {
+      id: `player-${randomUUID()}`,
+      reconnectToken: trimmedReconnectToken,
+      socketId: null,
       displayName: trimmedDisplayName,
-      roomId: existing?.roomId ?? null,
+      roomId: null,
       disconnectTimer: null,
     };
 
-    this.playersBySessionToken.set(trimmedSessionToken, session);
-    this.sessionTokenBySocketId.set(socketId, trimmedSessionToken);
+    session.reconnectToken = trimmedReconnectToken;
+    session.socketId = socketId;
+    session.displayName = trimmedDisplayName;
+
+    this.sessionsByReconnectToken.set(trimmedReconnectToken, session);
+    this.reconnectTokenBySocketId.set(socketId, trimmedReconnectToken);
 
     if (session.roomId) {
       const room = this.rooms.get(session.roomId);
@@ -107,16 +112,16 @@ export class RoomStore {
 
     return {
       id: session.id,
-      sessionToken: session.sessionToken,
+      sessionToken: session.reconnectToken,
       displayName: session.displayName,
     };
   }
 
   getPlayer(socketId: string) {
-    const sessionToken = this.sessionTokenBySocketId.get(socketId);
-    if (!sessionToken) return null;
+    const reconnectToken = this.reconnectTokenBySocketId.get(socketId);
+    if (!reconnectToken) return null;
 
-    return this.playersBySessionToken.get(sessionToken) ?? null;
+    return this.sessionsByReconnectToken.get(reconnectToken) ?? null;
   }
 
   getDisconnectGracePeriodMs() {
@@ -267,14 +272,14 @@ export class RoomStore {
   }
 
   disconnect(socketId: string): { changes?: MutationResult } {
-    const sessionToken = this.sessionTokenBySocketId.get(socketId);
-    if (!sessionToken) {
+    const reconnectToken = this.reconnectTokenBySocketId.get(socketId);
+    if (!reconnectToken) {
       return { changes: { updatedRoomIds: [] } };
     }
 
-    this.sessionTokenBySocketId.delete(socketId);
+    this.reconnectTokenBySocketId.delete(socketId);
 
-    const player = this.playersBySessionToken.get(sessionToken);
+    const player = this.sessionsByReconnectToken.get(reconnectToken);
     if (!player) {
       return { changes: { updatedRoomIds: [] } };
     }
@@ -284,7 +289,7 @@ export class RoomStore {
     }
 
     if (!player.roomId) {
-      this.playersBySessionToken.delete(sessionToken);
+      this.sessionsByReconnectToken.delete(reconnectToken);
       if (player.disconnectTimer) {
         clearTimeout(player.disconnectTimer);
       }
@@ -296,13 +301,13 @@ export class RoomStore {
     }
 
     player.disconnectTimer = setTimeout(() => {
-      const current = this.playersBySessionToken.get(sessionToken);
+      const current = this.sessionsByReconnectToken.get(reconnectToken);
       if (!current || current.socketId) {
         return;
       }
 
       const result = this.leaveRoomForSession(current, current.roomId ?? undefined);
-      this.playersBySessionToken.delete(sessionToken);
+      this.sessionsByReconnectToken.delete(reconnectToken);
       if (result.changes) {
         this.onMutation?.(result.changes);
       }

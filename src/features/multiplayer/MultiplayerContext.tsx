@@ -39,6 +39,11 @@ interface MultiplayerContextValue {
   refreshRooms: () => Promise<void>;
 }
 
+interface MultiplayerProviderProps {
+  children: ReactNode;
+  clientOverride?: MultiplayerClient;
+}
+
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
 
 function normalizeLookup(value: string) {
@@ -49,8 +54,12 @@ function normalizeCode(value: string) {
   return value.trim().toUpperCase();
 }
 
-export function MultiplayerProvider({ children }: { children: ReactNode }) {
+export function MultiplayerProvider({ children, clientOverride }: MultiplayerProviderProps) {
   const [client] = useState<MultiplayerClient>(() => {
+    if (clientOverride) {
+      return clientOverride;
+    }
+
     const config = readMultiplayerConfig();
     return createConfiguredMultiplayerClient(config);
   });

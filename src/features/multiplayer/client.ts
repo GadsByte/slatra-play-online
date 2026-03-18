@@ -1,13 +1,14 @@
+import { applyCommand, createInitialState, createMathRandom, type GameCommand } from '../../../packages/engine/src/slatra';
 import type {
   ClientToServerEvents,
   ServerToClientEvents,
 } from '@slatra/shared';
-import { createInitialMatchGameState } from '@slatra/shared';
 import { io, type Socket } from 'socket.io-client';
 import {
   CreateRoomInput,
   JoinRoomInput,
   LobbyRoomSummary,
+  MatchCommand,
   MatchSnapshot,
   MultiplayerSnapshot,
   PlayerIdentity,
@@ -38,6 +39,7 @@ export interface MultiplayerClient {
   leaveRoom(roomId: string): Promise<void>;
   setReady(roomId: string, ready: boolean): Promise<RoomDetails | null>;
   startMatch(roomId: string): Promise<MatchSnapshot | null>;
+  sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null>;
 }
 
 interface PendingRequest<TValue = unknown> {
@@ -48,7 +50,8 @@ interface PendingRequest<TValue = unknown> {
     | 'room:join'
     | 'room:leave'
     | 'room:set-ready'
-    | 'room:start-match';
+    | 'room:start-match'
+    | 'match:command';
   resolve: (value: TValue) => void;
   reject: (reason?: unknown) => void;
   timeoutId: ReturnType<typeof window.setTimeout>;
@@ -136,7 +139,11 @@ function seedMatches(): MatchSnapshot[] {
       id: 'match-bone-throne',
       roomId: 'room-bone-throne',
       status: 'active',
-      gameState: createInitialMatchGameState(),
+      seats: [
+        { seat: 'plague', playerId: 'npc-skullcrusher' },
+        { seat: 'bone', playerId: 'npc-rattlemaw' },
+      ],
+      gameState: createInitialState(),
       createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
     },
   ];
@@ -414,7 +421,11 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       id: createId('match'),
       roomId,
       status: 'active',
-      gameState: createInitialMatchGameState(),
+      seats: [
+        { seat: 'plague', playerId: room.hostPlayerId },
+        { seat: 'bone', playerId: room.players.find(player => player.id !== room.hostPlayerId)?.id ?? room.hostPlayerId },
+      ],
+      gameState: createInitialState(),
       createdAt: new Date().toISOString(),
     };
 
@@ -433,6 +444,36 @@ export class LocalMultiplayerClient implements MultiplayerClient {
 
   private getSnapshot() {
     return createSnapshot(getStoredIdentity(), ensureRooms(), ensureMatches());
+  }
+
+  async sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null> {
+    const identity = getStoredIdentity();
+    if (!identity) {
+      throw new Error('A display name is required before playing a match.');
+    }
+
+    const match = ensureMatches().find(existingMatch => existingMatch.roomId === roomId);
+    if (!match) {
+      return null;
+    }
+
+    const nextState = applyCommand(match.gameState, command as GameCommand, createMathRandom());
+    if (nextState === match.gameState) {
+      throw new Error('That command is not valid for the current game state.');
+    }
+
+    const nextMatches = ensureMatches().map(existingMatch =>
+      existingMatch.roomId === roomId
+        ? {
+            ...existingMatch,
+            gameState: nextState,
+          }
+        : existingMatch,
+    );
+
+    persistMatches(nextMatches);
+    this.emitSnapshot();
+    return nextMatches.find(existingMatch => existingMatch.roomId === roomId) ?? null;
   }
 
   private emitSnapshot() {
@@ -565,6 +606,14 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     });
   }
 
+  async sendMatchCommand(roomId: string, command: MatchCommand): Promise<MatchSnapshot | null> {
+    await this.ensureSocket();
+
+    return this.beginRequest<MatchSnapshot | null>({ kind: 'match:command', roomId }, () => {
+      this.socket!.emit('match:command', { roomId, command });
+    });
+  }
+
   private getSnapshot(): MultiplayerSnapshot {
     return {
       identity: this.identity,
@@ -673,7 +722,10 @@ export class SocketMultiplayerClient implements MultiplayerClient {
       this.matchStates.set(payload.match.roomId, payload.match);
       this.emitSnapshot();
 
-      if (this.pendingRequest?.kind === 'room:start-match' && this.pendingRequest.roomId === payload.match.roomId) {
+      if (
+        (this.pendingRequest?.kind === 'room:start-match' || this.pendingRequest?.kind === 'match:command')
+        && this.pendingRequest.roomId === payload.match.roomId
+      ) {
         this.resolvePending(payload.match);
       }
     });
@@ -697,7 +749,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     });
 
     socket.on('match:error', payload => {
-      if (this.pendingRequest?.kind === 'room:start-match') {
+      if (this.pendingRequest?.kind === 'room:start-match' || this.pendingRequest?.kind === 'match:command') {
         this.rejectPending(new Error(payload.message));
         return;
       }

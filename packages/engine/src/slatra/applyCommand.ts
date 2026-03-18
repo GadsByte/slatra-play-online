@@ -1,5 +1,5 @@
-import { GameCommand } from './commands';
-import { EngineRandom, rollDice } from './rng';
+import { GameCommand } from './commands.js';
+import { EngineRandom, rollDice } from './rng.js';
 import {
   COLUMNS,
   CorpseMarker,
@@ -12,7 +12,7 @@ import {
   posKey,
   Position,
   Unit,
-} from './types';
+} from './types.js';
 
 function addLog(state: GameState, msg: string): GameState {
   return { ...state, log: [...state.log, msg] };
@@ -500,7 +500,7 @@ export function applyCommand(state: GameState, command: GameCommand, rng: Engine
       const unit = getUnitById(state, state.activeUnit.unitId);
       if (!unit || unit.usedAbilityThisRound) return state;
 
-      let newState = {
+      let newState: GameState = {
         ...state,
         activeUnit: { ...state.activeUnit, hasUsedAbility: true },
       };

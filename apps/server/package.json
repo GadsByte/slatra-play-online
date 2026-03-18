@@ -12,6 +12,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@slatra/engine": "file:../../packages/engine",
     "@slatra/shared": "file:../../packages/shared",
     "socket.io": "^4.8.1"
   },

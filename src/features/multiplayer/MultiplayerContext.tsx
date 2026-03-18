@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react';
 import { createConfiguredMultiplayerClient, type MultiplayerClient } from './client';
-import { LobbyRoomSummary, MatchSnapshot, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
+import { LobbyRoomSummary, MatchCommand, MatchSnapshot, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
 
 interface MultiplayerContextValue {
   identity: PlayerIdentity | null;
@@ -23,6 +23,7 @@ interface MultiplayerContextValue {
   findMatchByRoomId: (roomId: string) => MatchSnapshot | null;
   setReadyState: (roomId: string, nextReady: boolean) => Promise<RoomDetails | null>;
   startMatch: (roomId: string) => Promise<MatchSnapshot | null>;
+  sendMatchCommand: (roomId: string, command: MatchCommand) => Promise<MatchSnapshot | null>;
   refreshRooms: () => Promise<void>;
 }
 
@@ -143,6 +144,10 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     return client.startMatch(roomId);
   }, [client]);
 
+  const sendMatchCommand = useCallback(async (roomId: string, command: MatchCommand) => {
+    return client.sendMatchCommand(roomId, command);
+  }, [client]);
+
   const value = useMemo<MultiplayerContextValue>(() => ({
     identity,
     rooms,
@@ -156,6 +161,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     findMatchByRoomId,
     setReadyState,
     startMatch,
+    sendMatchCommand,
     refreshRooms,
   }), [
     identity,
@@ -169,6 +175,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     findMatchByRoomId,
     setReadyState,
     startMatch,
+    sendMatchCommand,
     refreshRooms,
   ]);
 

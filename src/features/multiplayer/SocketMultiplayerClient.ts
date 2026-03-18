@@ -250,6 +250,14 @@ export class SocketMultiplayerClient implements MultiplayerClient {
       return Promise.resolve(null);
     }
 
+    const isSameIdentity = this.identity?.id === identity.id
+      && this.identity?.displayName === identity.displayName
+      && this.identity?.sessionToken === identity.sessionToken;
+    if (this.sessionReady && isSameIdentity) {
+      this.identity = identity;
+      return Promise.resolve(identity);
+    }
+
     this.identity = identity;
 
     if (this.sessionRestorePromise) {
@@ -273,7 +281,9 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     socket.on('connect', () => {
       const storedIdentity = this.identity ?? getStoredIdentity();
       if (storedIdentity?.displayName) {
-        void this.restoreSession(storedIdentity);
+        void this.restoreSession(storedIdentity).catch(error => {
+          console.error('[multiplayer] session restore failed', error);
+        });
         return;
       }
 

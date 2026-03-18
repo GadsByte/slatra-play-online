@@ -30,6 +30,7 @@ const MultiplayerRoom = () => {
 
   const [roomLoading, setRoomLoading] = useState(true);
   const [actionPending, setActionPending] = useState(false);
+  const [startPending, setStartPending] = useState(false);
   const attemptedJoinRef = useRef<string | null>(null);
 
   const match = useMemo(() => {
@@ -148,6 +149,7 @@ const MultiplayerRoom = () => {
     if (!room) return;
 
     setActionPending(true);
+    setStartPending(true);
 
     try {
       const nextMatch = await startMatch(room.id);
@@ -160,6 +162,7 @@ const MultiplayerRoom = () => {
       });
     } finally {
       setActionPending(false);
+      setStartPending(false);
     }
   };
 
@@ -234,9 +237,16 @@ const MultiplayerRoom = () => {
       </Card>
 
       {currentPlayer ? (
-        <div className="flex items-center gap-3">
-          <Switch checked={currentPlayer.ready} onCheckedChange={(checked) => void handleReadyChange(checked)} disabled={actionPending} />
-          <Label className="font-display tracking-wider text-foreground text-sm">READY</Label>
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-3">
+            <Switch checked={currentPlayer.ready} onCheckedChange={(checked) => void handleReadyChange(checked)} disabled={actionPending || room.status === 'in_game'} />
+            <Label className="font-display tracking-wider text-foreground text-sm">READY</Label>
+          </div>
+          {room.status === 'in_game' && (
+            <p className="text-sm font-body text-muted-foreground text-center">
+              Match started. Moving both players into the live online battlefield...
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-sm font-body text-muted-foreground">You are not seated in this room.</p>
@@ -250,7 +260,7 @@ const MultiplayerRoom = () => {
             disabled={!canStart || actionPending}
             className="w-full font-display text-lg tracking-wider py-6"
           >
-            START GAME
+            {startPending ? 'STARTING MATCH...' : 'START ONLINE MATCH'}
           </Button>
         )}
         <Button

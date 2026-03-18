@@ -247,6 +247,11 @@ export interface MatchStatePayload {
   match: MatchSnapshotDto;
 }
 
+export interface MatchStartedPayload {
+  room: RoomDetailsDto;
+  match: MatchSnapshotDto;
+}
+
 export interface RoomNotFoundPayload {
   roomIdOrCode: string;
 }
@@ -275,6 +280,7 @@ export interface ServerToClientEvents {
   'session:ready': (payload: SessionReadyPayload) => void;
   'lobby:rooms': (payload: LobbyRoomsPayload) => void;
   'room:state': (payload: RoomStatePayload) => void;
+  'match:started': (payload: MatchStartedPayload) => void;
   'match:state': (payload: MatchStatePayload) => void;
   'room:not-found': (payload: RoomNotFoundPayload) => void;
   'room:error': (payload: RoomErrorPayload) => void;

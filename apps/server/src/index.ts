@@ -63,6 +63,13 @@ function emitRoomState(roomId: RoomId) {
   io.to(roomId).emit('room:state', { room });
 }
 
+function emitMatchStarted(roomId: RoomId) {
+  const room = store.getRoom(roomId);
+  const match = matchStore.getMatch(roomId);
+  if (!room || !match) return;
+  io.to(roomId).emit('match:started', { room, match });
+}
+
 function emitMatchState(roomId: RoomId) {
   const match = matchStore.getMatch(roomId);
   if (!match) return;
@@ -206,7 +213,7 @@ io.on('connection', socket => {
     }
 
     if (room.status === 'in_game' && room.activeMatchId) {
-      emitRoomState(room.id);
+      emitMatchStarted(room.id);
       emitMatchState(room.id);
       return;
     }
@@ -237,7 +244,7 @@ io.on('connection', socket => {
       return;
     }
 
-    emitRoomState(updatedRoom.id);
+    emitMatchStarted(updatedRoom.id);
     emitMatchState(updatedRoom.id);
     broadcastLobbyRooms();
   });

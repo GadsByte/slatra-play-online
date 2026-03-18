@@ -29,4 +29,17 @@ describe('multiplayer storage identity', () => {
     expect(identity?.sessionToken).toMatch(/^session-/);
     expect(JSON.parse(window.localStorage.getItem('slatra.multiplayer.identity') ?? '{}').sessionToken).toBe(identity?.sessionToken);
   });
+
+  it('promotes legacy display-name storage into the shared identity record', () => {
+    window.localStorage.setItem('slatraDisplayName', 'Legacy Name');
+
+    const identity = loadStoredIdentity();
+
+    expect(identity).toEqual({
+      id: 'player-legacy',
+      sessionToken: expect.stringMatching(/^session-/),
+      displayName: 'Legacy Name',
+    });
+    expect(JSON.parse(window.localStorage.getItem('slatra.multiplayer.identity') ?? '{}')).toEqual(identity);
+  });
 });

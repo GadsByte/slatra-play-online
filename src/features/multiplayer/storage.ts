@@ -50,11 +50,14 @@ export function loadStoredIdentity(): PlayerIdentityDto | null {
   const legacyDisplayName = window.localStorage.getItem(STORAGE_KEYS.legacyDisplayName)?.trim();
   if (!legacyDisplayName) return null;
 
-  return {
+  const identity: PlayerIdentityDto = {
     id: 'player-legacy',
     sessionToken: createSessionToken(),
     displayName: legacyDisplayName,
   };
+
+  saveStoredIdentity(identity);
+  return identity;
 }
 
 export function saveStoredIdentity(identity: PlayerIdentityDto) {

@@ -276,14 +276,21 @@ export class SocketMultiplayerClient implements MultiplayerClient {
       }
     });
 
+    socket.on('match:started', payload => {
+      this.roomStates.set(payload.room.id, payload.room);
+      this.matchStates.set(payload.match.roomId, payload.match);
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'room:start-match' && this.pendingRequest.roomId === payload.match.roomId) {
+        this.resolvePending(payload.match);
+      }
+    });
+
     socket.on('match:state', payload => {
       this.matchStates.set(payload.match.roomId, payload.match);
       this.emitSnapshot();
 
-      if (
-        (this.pendingRequest?.kind === 'room:start-match' || this.pendingRequest?.kind === 'match:command')
-        && this.pendingRequest.roomId === payload.match.roomId
-      ) {
+      if (this.pendingRequest?.kind === 'match:command' && this.pendingRequest.roomId === payload.match.roomId) {
         this.resolvePending(payload.match);
       }
     });

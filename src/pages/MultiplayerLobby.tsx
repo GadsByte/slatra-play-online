@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,114 +7,146 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-
-const STORAGE_KEY = 'slatraDisplayName';
-
-interface MockRoom {
-  id: string;
-  name: string;
-  host: string;
-  players: number;
-  maxPlayers: number;
-  status: 'Waiting' | 'In Game';
-  isPrivate: boolean;
-}
-
-const INITIAL_ROOMS: MockRoom[] = [
-  { id: 'room-1', name: 'The Blood Pit', host: 'Wulfgrim', players: 1, maxPlayers: 2, status: 'Waiting', isPrivate: false },
-  { id: 'room-2', name: 'Bone Throne Arena', host: 'Skullcrusher', players: 2, maxPlayers: 2, status: 'In Game', isPrivate: false },
-  { id: 'room-3', name: 'Plague Grounds', host: 'Rotface', players: 1, maxPlayers: 2, status: 'Waiting', isPrivate: true },
-];
+import { toast } from 'sonner';
+import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
 
 const MultiplayerLobby = () => {
   const navigate = useNavigate();
-  const [displayName, setDisplayName] = useState('');
+  const {
+    identity,
+    rooms,
+    loading,
+    saveDisplayName,
+    createRoom,
+    joinRoom,
+  } = useMultiplayer();
+
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState('');
-  const [rooms, setRooms] = useState<MockRoom[]>(INITIAL_ROOMS);
   const [createOpen, setCreateOpen] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [joinPrivateOpen, setJoinPrivateOpen] = useState(false);
   const [privateCode, setPrivateCode] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (!saved) {
+    if (!loading && !identity) {
       navigate('/multiplayer');
       return;
     }
-    setDisplayName(saved);
-    setNameInput(saved);
-  }, [navigate]);
 
-  const handleSaveName = () => {
+    setNameInput(identity?.displayName ?? '');
+  }, [identity, loading, navigate]);
+
+  const handleSaveName = async () => {
     const trimmed = nameInput.trim();
     if (!trimmed) return;
-    localStorage.setItem(STORAGE_KEY, trimmed);
-    setDisplayName(trimmed);
+
+    setSubmitting(true);
+    await saveDisplayName(trimmed);
     setEditingName(false);
+    setSubmitting(false);
   };
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
     const trimmed = newRoomName.trim();
     if (!trimmed) return;
-    const id = `room-${Date.now()}`;
-    const room: MockRoom = {
-      id,
-      name: trimmed,
-      host: displayName,
-      players: 1,
-      maxPlayers: 2,
-      status: 'Waiting',
-      isPrivate: newRoomPrivate,
-    };
-    setRooms(prev => [...prev, room]);
+
+    setSubmitting(true);
+    const room = await createRoom(trimmed, newRoomPrivate ? 'private' : 'public');
     setCreateOpen(false);
     setNewRoomName('');
     setNewRoomPrivate(false);
-    navigate(`/multiplayer/room/${id}`);
+    setSubmitting(false);
+    navigate(`/multiplayer/room/${room.id}`);
   };
 
-  const handleJoin = (roomId: string) => {
-    navigate(`/multiplayer/room/${roomId}`);
+  const handleJoin = async (roomIdOrCode: string) => {
+    setSubmitting(true);
+    const room = await joinRoom(roomIdOrCode);
+    setSubmitting(false);
+
+    if (!room) {
+      toast('Room not found', {
+        description: 'That room no longer exists in mock mode.',
+      });
+      return;
+    }
+
+    const currentPlayer = room.players.find(player => player.id === identity?.id);
+    if (!currentPlayer && room.players.length >= room.maxPlayers) {
+      toast('Room is full', {
+        description: 'This room already has two players.',
+      });
+      return;
+    }
+
+    navigate(`/multiplayer/room/${room.id}`);
   };
 
-  const handleJoinPrivate = () => {
+  const handleJoinPrivate = async () => {
     const trimmed = privateCode.trim();
     if (!trimmed) return;
+
+    setSubmitting(true);
+    const room = await joinRoom(trimmed);
+    setSubmitting(false);
+
+    if (!room) {
+      toast('Room not found', {
+        description: 'Check the room code and try again.',
+      });
+      return;
+    }
+
+    const currentPlayer = room.players.find(player => player.id === identity?.id);
+    if (!currentPlayer && room.players.length >= room.maxPlayers) {
+      toast('Room is full', {
+        description: 'This room already has two players.',
+      });
+      return;
+    }
+
     setJoinPrivateOpen(false);
     setPrivateCode('');
-    navigate(`/multiplayer/room/${trimmed.toLowerCase()}`);
+    navigate(`/multiplayer/room/${room.id}`);
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center px-4">
+        <p className="font-display tracking-wider text-muted-foreground">SUMMONING THE LOBBY...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8 gap-6">
       <h1 className="font-display text-4xl font-black tracking-widest text-foreground">LOBBY</h1>
 
-      {/* Display name */}
       <div className="flex items-center gap-3">
         {editingName ? (
           <>
             <Input
               value={nameInput}
               onChange={(e) => setNameInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSaveName()}
+              onKeyDown={(e) => e.key === 'Enter' && !submitting && void handleSaveName()}
               maxLength={24}
+              disabled={submitting}
               className="font-body w-48 h-9 bg-secondary border-border text-center"
             />
-            <Button size="sm" onClick={handleSaveName} className="font-display text-xs">SAVE</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setEditingName(false); setNameInput(displayName); }} className="font-display text-xs text-muted-foreground">CANCEL</Button>
+            <Button size="sm" onClick={() => void handleSaveName()} disabled={submitting} className="font-display text-xs">SAVE</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setEditingName(false); setNameInput(identity?.displayName ?? ''); }} className="font-display text-xs text-muted-foreground">CANCEL</Button>
           </>
         ) : (
           <>
-            <span className="font-body text-foreground text-lg">Playing as <span className="font-display text-primary">{displayName}</span></span>
+            <span className="font-body text-foreground text-lg">Playing as <span className="font-display text-primary">{identity?.displayName}</span></span>
             <Button size="sm" variant="ghost" onClick={() => setEditingName(true)} className="font-display text-xs text-muted-foreground hover:text-foreground">EDIT</Button>
           </>
         )}
       </div>
 
-      {/* Room list */}
       <div className="w-full max-w-lg space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="font-display text-lg tracking-wider text-foreground">ROOMS</h2>
@@ -132,11 +164,11 @@ const MultiplayerLobby = () => {
                     placeholder="Room code"
                     value={privateCode}
                     onChange={(e) => setPrivateCode(e.target.value.toUpperCase())}
-                    onKeyDown={(e) => e.key === 'Enter' && handleJoinPrivate()}
+                    onKeyDown={(e) => e.key === 'Enter' && !submitting && void handleJoinPrivate()}
                     maxLength={12}
                     className="font-display text-center text-lg tracking-[0.2em] bg-secondary border-border uppercase"
                   />
-                  <Button onClick={handleJoinPrivate} disabled={!privateCode.trim()} className="w-full font-display tracking-wider">
+                  <Button onClick={() => void handleJoinPrivate()} disabled={!privateCode.trim() || submitting} className="w-full font-display tracking-wider">
                     JOIN
                   </Button>
                 </div>
@@ -146,66 +178,77 @@ const MultiplayerLobby = () => {
               <DialogTrigger asChild>
                 <Button size="sm" className="font-display tracking-wider">+ CREATE ROOM</Button>
               </DialogTrigger>
-            <DialogContent className="bg-card border-border">
-              <DialogHeader>
-                <DialogTitle className="font-display tracking-wider text-foreground">CREATE ROOM</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <Input
-                  placeholder="Room name"
-                  value={newRoomName}
-                  onChange={(e) => setNewRoomName(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleCreateRoom()}
-                  maxLength={32}
-                  className="font-body bg-secondary border-border"
-                />
-                <div className="flex items-center gap-3">
-                  <Switch checked={newRoomPrivate} onCheckedChange={setNewRoomPrivate} />
-                  <Label className="font-body text-muted-foreground">Private room</Label>
+              <DialogContent className="bg-card border-border">
+                <DialogHeader>
+                  <DialogTitle className="font-display tracking-wider text-foreground">CREATE ROOM</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 pt-2">
+                  <Input
+                    placeholder="Room name"
+                    value={newRoomName}
+                    onChange={(e) => setNewRoomName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !submitting && void handleCreateRoom()}
+                    maxLength={32}
+                    className="font-body bg-secondary border-border"
+                  />
+                  <div className="flex items-center gap-3">
+                    <Switch checked={newRoomPrivate} onCheckedChange={setNewRoomPrivate} />
+                    <Label className="font-body text-muted-foreground">Private room</Label>
+                  </div>
+                  <Button onClick={() => void handleCreateRoom()} disabled={!newRoomName.trim() || submitting} className="w-full font-display tracking-wider">
+                    CREATE
+                  </Button>
                 </div>
-                <Button onClick={handleCreateRoom} disabled={!newRoomName.trim()} className="w-full font-display tracking-wider">
-                  CREATE
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
           </div>
         </div>
 
         {rooms.length === 0 && (
-          <p className="text-muted-foreground font-body text-center py-8">No rooms available. Create one!</p>
-        )}
-
-        {rooms.map(room => (
-          <Card key={room.id} className="bg-card border-border">
-            <CardContent className="flex items-center justify-between p-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-display text-sm tracking-wider text-foreground">{room.name}</span>
-                  {room.isPrivate && <Badge variant="outline" className="text-xs font-display border-muted-foreground/30 text-muted-foreground">PRIVATE</Badge>}
-                </div>
-                <div className="flex items-center gap-3 text-xs font-body text-muted-foreground">
-                  <span>Host: {room.host}</span>
-                  <span>{room.players}/{room.maxPlayers}</span>
-                  <Badge
-                    variant={room.status === 'Waiting' ? 'default' : 'secondary'}
-                    className={`text-xs font-display ${room.status === 'Waiting' ? 'bg-primary/20 text-primary border-primary/30' : 'bg-muted text-muted-foreground'}`}
-                  >
-                    {room.status}
-                  </Badge>
-                </div>
-              </div>
-              <Button
-                size="sm"
-                disabled={room.players >= room.maxPlayers || room.status === 'In Game'}
-                onClick={() => handleJoin(room.id)}
-                className="font-display tracking-wider text-xs"
-              >
-                JOIN
-              </Button>
+          <Card className="bg-card border-border">
+            <CardContent className="p-8 text-center space-y-2">
+              <p className="font-display tracking-wider text-foreground">NO ROOMS IN THE LOBBY</p>
+              <p className="text-sm font-body text-muted-foreground">Create a room to begin the slaughter.</p>
             </CardContent>
           </Card>
-        ))}
+        )}
+
+        {rooms.map(room => {
+          const isFull = room.playerCount >= room.maxPlayers;
+          const isInGame = room.status === 'in_game';
+
+          return (
+            <Card key={room.id} className="bg-card border-border">
+              <CardContent className="flex items-center justify-between p-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display text-sm tracking-wider text-foreground">{room.name}</span>
+                    {room.visibility === 'private' && <Badge variant="outline" className="text-xs font-display border-muted-foreground/30 text-muted-foreground">PRIVATE</Badge>}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs font-body text-muted-foreground flex-wrap">
+                    <span>Host: {room.hostDisplayName}</span>
+                    <span>{room.playerCount}/{room.maxPlayers}</span>
+                    {room.visibility === 'private' && <span>Code: {room.code}</span>}
+                    <Badge
+                      variant={room.status === 'waiting' ? 'default' : 'secondary'}
+                      className={`text-xs font-display ${room.status === 'waiting' ? 'bg-primary/20 text-primary border-primary/30' : 'bg-muted text-muted-foreground'}`}
+                    >
+                      {room.status === 'waiting' ? 'Waiting' : 'In Game'}
+                    </Badge>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  disabled={submitting || isFull || isInGame}
+                  onClick={() => void handleJoin(room.id)}
+                  className="font-display tracking-wider text-xs"
+                >
+                  JOIN
+                </Button>
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       <Button

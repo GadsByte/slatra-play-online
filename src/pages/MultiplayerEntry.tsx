@@ -1,23 +1,26 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-
-const STORAGE_KEY = 'slatraDisplayName';
+import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
 
 const MultiplayerEntry = () => {
   const navigate = useNavigate();
+  const { identity, loading, saveDisplayName } = useMultiplayer();
   const [displayName, setDisplayName] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) setDisplayName(saved);
-  }, []);
+    setDisplayName(identity?.displayName ?? '');
+  }, [identity?.displayName]);
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     const trimmed = displayName.trim();
     if (!trimmed) return;
-    localStorage.setItem(STORAGE_KEY, trimmed);
+
+    setSaving(true);
+    await saveDisplayName(trimmed);
+    setSaving(false);
     navigate('/multiplayer/lobby');
   };
 
@@ -35,17 +38,18 @@ const MultiplayerEntry = () => {
           placeholder="Display name"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && handleContinue()}
+          onKeyDown={(e) => e.key === 'Enter' && !loading && !saving && void handleContinue()}
           maxLength={24}
+          disabled={loading || saving}
           className="font-body text-center text-lg h-12 bg-secondary border-border focus:border-primary"
         />
         <Button
           size="lg"
-          onClick={handleContinue}
-          disabled={!displayName.trim()}
+          onClick={() => void handleContinue()}
+          disabled={!displayName.trim() || loading || saving}
           className="w-full font-display text-lg tracking-wider py-6"
         >
-          CONTINUE
+          {loading || saving ? 'PREPARING...' : 'CONTINUE'}
         </Button>
         <Button
           variant="ghost"

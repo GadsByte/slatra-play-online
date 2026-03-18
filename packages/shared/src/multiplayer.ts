@@ -167,9 +167,36 @@ export interface MatchSnapshotDto {
   id: MatchId;
   roomId: RoomId;
   status: MatchStatus;
+  seats: MatchSeatAssignmentDto[];
   gameState: MatchGameStateDto;
   createdAt: string;
 }
+
+export interface MatchSeatAssignmentDto {
+  seat: FactionDto;
+  playerId: PlayerId;
+}
+
+export type MatchCommandDto =
+  | { type: 'START_GAME' }
+  | { type: 'PLACE_HAZARD'; position: PositionDto }
+  | { type: 'ROLL_OBJECTIVES' }
+  | { type: 'DEPLOY_UNIT'; unitClass: UnitClassDto; position: PositionDto }
+  | { type: 'FINISH_DEPLOYMENT' }
+  | { type: 'ROLL_INITIATIVE' }
+  | { type: 'SELECT_UNIT'; unitId: string }
+  | { type: 'DESELECT_UNIT' }
+  | { type: 'SELECT_DEPLOY_CLASS'; unitClass: UnitClassDto }
+  | { type: 'MOVE_UNIT'; position: PositionDto }
+  | { type: 'ATTACK_UNIT'; targetId: string }
+  | { type: 'USE_ABILITY'; targetId?: string; direction?: DirectionDto }
+  | { type: 'INTERACT_OBJECTIVE' }
+  | { type: 'END_ACTIVATION' }
+  | { type: 'ANCIENT_EVASION'; unitId: string; position: PositionDto }
+  | { type: 'LAST_RITE'; targetId: string }
+  | { type: 'FORFEIT' }
+  | { type: 'DISMISS_DICE' }
+  | { type: 'SELECT_TILE'; position: PositionDto | null };
 
 export interface RegisterPlayerRequestDto {
   displayName: string;
@@ -195,6 +222,11 @@ export interface SetReadyRequestDto {
 
 export interface StartMatchRequestDto {
   roomId: RoomId;
+}
+
+export interface MatchCommandRequestDto {
+  roomId: RoomId;
+  command: MatchCommandDto;
 }
 
 export interface SessionReadyPayload {
@@ -234,6 +266,7 @@ export interface ClientToServerEvents {
   'room:leave': (payload: LeaveRoomRequestDto) => void;
   'room:set-ready': (payload: SetReadyRequestDto) => void;
   'room:start-match': (payload: StartMatchRequestDto) => void;
+  'match:command': (payload: MatchCommandRequestDto) => void;
 }
 
 export interface ServerToClientEvents {

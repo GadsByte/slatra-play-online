@@ -1,4 +1,5 @@
 import { createServer } from 'node:http';
+import type { GameCommand } from '../../../packages/engine/src/slatra/commands.js';
 import {
   ClientToServerEvents,
   HealthResponseDto,
@@ -8,6 +9,7 @@ import {
 } from '@slatra/shared';
 import { Server } from 'socket.io';
 import { getServerConfig } from './config.js';
+import { validatePlayerCommand } from './matchGuards.js';
 import { MatchStore } from './matchStore.js';
 import { RoomStore } from './roomStore.js';
 
@@ -200,7 +202,16 @@ io.on('connection', socket => {
       return;
     }
 
-    const match = matchStore.createMatch(room.id);
+    let match;
+    try {
+      match = matchStore.createMatch(room);
+    } catch (error) {
+      socket.emit('match:error', {
+        roomId: payload.roomId,
+        message: error instanceof Error ? error.message : 'Unable to create the match right now.',
+      });
+      return;
+    }
     const updatedRoom = store.markRoomInGame(room.id, match.id);
     if (!updatedRoom) {
       socket.emit('match:error', { roomId: payload.roomId, message: 'Unable to start the match right now.' });
@@ -210,6 +221,45 @@ io.on('connection', socket => {
     emitRoomState(updatedRoom.id);
     emitMatchState(updatedRoom.id);
     broadcastLobbyRooms();
+  });
+
+  socket.on('match:command', payload => {
+    const player = store.getPlayer(socket.id);
+    if (!player) {
+      socket.emit('match:error', { roomId: payload.roomId, message: 'Register a display name before issuing match commands.' });
+      return;
+    }
+
+    const room = store.getRoom(payload.roomId);
+    if (!room || !room.players.some(roomPlayer => roomPlayer.id === player.id)) {
+      socket.emit('match:error', { roomId: payload.roomId, message: 'You are not in that room.' });
+      return;
+    }
+
+    const match = matchStore.getMatchRecord(payload.roomId);
+    if (!match) {
+      socket.emit('match:error', { roomId: payload.roomId, message: 'No active match was found for that room.' });
+      return;
+    }
+
+    const validation = validatePlayerCommand(match, player.id, payload.command);
+    if (!validation.allowed) {
+      socket.emit('match:error', { roomId: payload.roomId, message: validation.message ?? 'That command is not valid right now.' });
+      return;
+    }
+
+    const result = matchStore.applyCommand(payload.roomId, payload.command as GameCommand);
+    if (!result) {
+      socket.emit('match:error', { roomId: payload.roomId, message: 'Unable to update the match right now.' });
+      return;
+    }
+
+    if (!result.changed) {
+      socket.emit('match:error', { roomId: payload.roomId, message: 'That command is not valid for the current game state.' });
+      return;
+    }
+
+    emitMatchState(payload.roomId);
   });
 
   socket.on('disconnect', () => {

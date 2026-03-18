@@ -1,1 +1,1 @@
-export * from './slatra';
+export * from './slatra/index.js';

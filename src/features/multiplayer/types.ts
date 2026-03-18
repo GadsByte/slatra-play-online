@@ -2,6 +2,7 @@ import type {
   CreateRoomRequestDto,
   JoinRoomRequestDto,
   LobbyRoomSummaryDto,
+  MatchCommandDto,
   MatchSnapshotDto,
   PlayerIdentityDto,
   RoomDetailsDto,
@@ -18,6 +19,7 @@ export type RoomPlayer = RoomPlayerDto;
 export type LobbyRoomSummary = LobbyRoomSummaryDto;
 export type RoomDetails = RoomDetailsDto;
 export type MatchSnapshot = MatchSnapshotDto;
+export type MatchCommand = MatchCommandDto;
 
 export type CreateRoomInput = CreateRoomRequestDto;
 export type JoinRoomInput = JoinRoomRequestDto;

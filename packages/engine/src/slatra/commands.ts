@@ -1,4 +1,4 @@
-import { Position, UnitClass } from './types';
+import { Position, UnitClass } from './types.js';
 
 export type GameCommand =
   | { type: 'START_GAME' }

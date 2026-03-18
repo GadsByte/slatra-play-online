@@ -129,6 +129,7 @@ export function createInitialMatchGameState(): MatchGameStateDto {
 
 export interface PlayerIdentityDto {
   id: PlayerId;
+  sessionToken: string;
   displayName: string;
 }
 
@@ -199,6 +200,7 @@ export type MatchCommandDto =
   | { type: 'SELECT_TILE'; position: PositionDto | null };
 
 export interface RegisterPlayerRequestDto {
+  sessionToken: string;
   displayName: string;
 }
 

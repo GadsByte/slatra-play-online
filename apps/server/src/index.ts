@@ -14,7 +14,6 @@ import { MatchStore } from './matchStore.js';
 import { RoomStore } from './roomStore.js';
 
 const config = getServerConfig();
-const store = new RoomStore();
 const matchStore = new MatchStore();
 
 const httpServer = createServer((request, response) => {
@@ -70,6 +69,13 @@ function emitMatchState(roomId: RoomId) {
   io.to(roomId).emit('match:state', { match });
 }
 
+const store = new RoomStore(changes => {
+  cleanupRemovedMatches(changes.removedRoomIds);
+  cleanupEndedMatches(changes.clearedMatchRoomIds);
+  changes.updatedRoomIds.forEach(emitRoomState);
+  broadcastLobbyRooms();
+});
+
 io.on('connection', socket => {
   socket.emit('lobby:rooms', { rooms: store.listRooms() });
 
@@ -78,13 +84,26 @@ io.on('connection', socket => {
       socket.emit('room:error', { message: 'Display name is required.' });
       return;
     }
+    if (!payload.sessionToken.trim()) {
+      socket.emit('room:error', { message: 'Session token is required.' });
+      return;
+    }
 
-    const player = store.registerPlayer(socket.id, payload.displayName);
+    const player = store.registerPlayer(socket.id, payload.sessionToken, payload.displayName);
     socket.emit('session:ready', { player });
     const currentRoomId = store.getPlayer(socket.id)?.roomId;
     if (currentRoomId) {
-      emitRoomState(currentRoomId);
-      emitMatchState(currentRoomId);
+      socket.join(currentRoomId);
+
+      const room = store.getRoom(currentRoomId);
+      if (room) {
+        socket.emit('room:state', { room });
+      }
+
+      const match = matchStore.getMatch(currentRoomId);
+      if (match) {
+        socket.emit('match:state', { match });
+      }
     }
     broadcastLobbyRooms();
   });

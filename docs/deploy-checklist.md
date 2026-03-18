@@ -29,9 +29,18 @@ npm run ci:deploy-checks
 - Install dependencies with `npm ci`.
 - Confirm the root frontend builds successfully with `npm run ci:frontend-build`.
 - Confirm the frontend multiplayer provider smoke test passes with `npm run test:smoke:frontend`.
-- Verify the deployment environment provides the expected frontend variables:
-  - `VITE_MULTIPLAYER_TRANSPORT`
-  - `VITE_MULTIPLAYER_SERVER_URL`
+- Verify the deployment environment provides the expected frontend variables with the exact values required by that stage:
+
+| Stage | `VITE_MULTIPLAYER_TRANSPORT` | `VITE_MULTIPLAYER_SERVER_URL` | `VITE_MULTIPLAYER_LOCAL_SEEDS` |
+| --- | --- | --- | --- |
+| Local development | `socket` | `http://localhost:3001` | Unset |
+| Preview build | `socket` | `https://<preview-backend-host>` or same-origin preview URL | Unset |
+| Production | `socket` | `https://<production-backend-host>` or same-origin production URL | Unset |
+| Offline/demo-only local mode | `local` | Optional; ignored by local transport | Unset by default, or `demo` to preload demo data |
+
+- Verify preview and production builds are never shipped with `VITE_MULTIPLAYER_TRANSPORT=local`.
+- Verify `VITE_MULTIPLAYER_LOCAL_SEEDS` is unset for preview and production builds.
+- If `VITE_MULTIPLAYER_TRANSPORT=local` and `VITE_MULTIPLAYER_LOCAL_SEEDS=demo` are both enabled for offline/demo work, note that **you will see dummy rooms** and dummy match state in the multiplayer UI.
 - For production deployments, verify the frontend is configured to talk to the deployed backend origin.
 
 ## `apps/server` deploy checklist

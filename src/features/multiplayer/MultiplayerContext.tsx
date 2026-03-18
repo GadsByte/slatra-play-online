@@ -8,22 +8,30 @@ import {
   useState,
 } from 'react';
 import { createConfiguredMultiplayerClient, type MultiplayerClient } from './client';
-import { LobbyRoomSummary, MatchCommand, MatchSnapshot, PlayerIdentity, RoomDetails, RoomVisibility } from './types';
+import {
+  LobbyRoomSummaryDto,
+  MatchCommandDto,
+  MatchSnapshotDto,
+  MultiplayerSnapshot,
+  PlayerIdentityDto,
+  RoomDetailsDto,
+  RoomVisibility,
+} from './types';
 
 interface MultiplayerContextValue {
-  identity: PlayerIdentity | null;
-  rooms: LobbyRoomSummary[];
+  identity: PlayerIdentityDto | null;
+  rooms: LobbyRoomSummaryDto[];
   loading: boolean;
   ready: boolean;
-  saveDisplayName: (displayName: string) => Promise<PlayerIdentity>;
-  createRoom: (name: string, visibility: RoomVisibility) => Promise<RoomDetails>;
-  joinRoom: (roomIdOrCode: string) => Promise<RoomDetails | null>;
+  saveDisplayName: (displayName: string) => Promise<PlayerIdentityDto>;
+  createRoom: (name: string, visibility: RoomVisibility) => Promise<RoomDetailsDto>;
+  joinRoom: (roomIdOrCode: string) => Promise<RoomDetailsDto | null>;
   leaveRoom: (roomId: string) => Promise<void>;
-  findRoomByIdOrCode: (roomIdOrCode: string) => RoomDetails | null;
-  findMatchByRoomId: (roomId: string) => MatchSnapshot | null;
-  setReadyState: (roomId: string, nextReady: boolean) => Promise<RoomDetails | null>;
-  startMatch: (roomId: string) => Promise<MatchSnapshot | null>;
-  sendMatchCommand: (roomId: string, command: MatchCommand) => Promise<MatchSnapshot | null>;
+  findRoomByIdOrCode: (roomIdOrCode: string) => RoomDetailsDto | null;
+  findMatchByRoomId: (roomId: string) => MatchSnapshotDto | null;
+  setReadyState: (roomId: string, nextReady: boolean) => Promise<RoomDetailsDto | null>;
+  startMatch: (roomId: string) => Promise<MatchSnapshotDto | null>;
+  sendMatchCommand: (roomId: string, command: MatchCommandDto) => Promise<MatchSnapshotDto | null>;
   refreshRooms: () => Promise<void>;
 }
 
@@ -39,18 +47,13 @@ function normalizeCode(value: string) {
 
 export function MultiplayerProvider({ children }: { children: ReactNode }) {
   const [client] = useState<MultiplayerClient>(() => createConfiguredMultiplayerClient());
-  const [identity, setIdentity] = useState<PlayerIdentity | null>(null);
-  const [rooms, setRooms] = useState<LobbyRoomSummary[]>([]);
-  const [roomStates, setRoomStates] = useState<RoomDetails[]>([]);
-  const [matchStates, setMatchStates] = useState<MatchSnapshot[]>([]);
+  const [identity, setIdentity] = useState<PlayerIdentityDto | null>(null);
+  const [rooms, setRooms] = useState<LobbyRoomSummaryDto[]>([]);
+  const [roomStates, setRoomStates] = useState<RoomDetailsDto[]>([]);
+  const [matchStates, setMatchStates] = useState<MatchSnapshotDto[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const applySnapshot = useCallback((snapshot: {
-    identity: PlayerIdentity | null;
-    rooms: LobbyRoomSummary[];
-    roomStates: RoomDetails[];
-    matchStates: MatchSnapshot[];
-  }) => {
+  const applySnapshot = useCallback((snapshot: MultiplayerSnapshot) => {
     setIdentity(snapshot.identity);
     setRooms(snapshot.rooms);
     setRoomStates(snapshot.roomStates);
@@ -93,7 +96,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
   }, [applySnapshot, client]);
 
   const roomLookup = useMemo(() => {
-    const index = new Map<string, RoomDetails>();
+    const index = new Map<string, RoomDetailsDto>();
 
     roomStates.forEach(room => {
       index.set(room.id, room);
@@ -144,7 +147,7 @@ export function MultiplayerProvider({ children }: { children: ReactNode }) {
     return client.startMatch(roomId);
   }, [client]);
 
-  const sendMatchCommand = useCallback(async (roomId: string, command: MatchCommand) => {
+  const sendMatchCommand = useCallback(async (roomId: string, command: MatchCommandDto) => {
     return client.sendMatchCommand(roomId, command);
   }, [client]);
 

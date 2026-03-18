@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMultiplayer } from '@/features/multiplayer/MultiplayerContext';
@@ -19,9 +20,17 @@ const MultiplayerEntry = () => {
     if (!trimmed) return;
 
     setSaving(true);
-    await saveDisplayName(trimmed);
-    setSaving(false);
-    navigate('/multiplayer/lobby');
+
+    try {
+      await saveDisplayName(trimmed);
+      navigate('/multiplayer/lobby');
+    } catch (error) {
+      toast('Unable to continue', {
+        description: error instanceof Error ? error.message : 'Check your multiplayer configuration and try again.',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (

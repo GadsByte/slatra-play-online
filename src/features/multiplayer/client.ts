@@ -1,3 +1,8 @@
+import type {
+  ClientToServerEvents,
+  ServerToClientEvents,
+} from '@slatra/shared';
+import { io, type Socket } from 'socket.io-client';
 import {
   CreateRoomInput,
   JoinRoomInput,
@@ -9,8 +14,12 @@ import {
 } from './types';
 import { loadStoredIdentity, loadStoredRooms, saveStoredIdentity, saveStoredRooms } from './storage';
 
+export type MultiplayerSnapshotListener = (snapshot: MultiplayerSnapshot) => void;
+export type MultiplayerTransport = 'local' | 'socket';
+
 export interface MultiplayerClient {
   loadSnapshot(): Promise<MultiplayerSnapshot>;
+  subscribe(listener: MultiplayerSnapshotListener): () => void;
   saveDisplayName(displayName: string): Promise<PlayerIdentity>;
   listRooms(): Promise<LobbyRoomSummary[]>;
   getRoom(roomIdOrCode: string): Promise<RoomDetails | null>;
@@ -18,6 +27,26 @@ export interface MultiplayerClient {
   joinRoom(input: JoinRoomInput): Promise<RoomDetails | null>;
   leaveRoom(roomId: string): Promise<void>;
   setReady(roomId: string, ready: boolean): Promise<RoomDetails | null>;
+}
+
+interface PendingRequest<TValue = unknown> {
+  kind:
+    | 'session:set-name'
+    | 'lobby:list-rooms'
+    | 'room:create'
+    | 'room:join'
+    | 'room:leave'
+    | 'room:set-ready';
+  resolve: (value: TValue) => void;
+  reject: (reason?: unknown) => void;
+  timeoutId: ReturnType<typeof window.setTimeout>;
+  roomId?: string;
+  roomIdOrCode?: string;
+}
+
+interface MultiplayerClientConfig {
+  transport: MultiplayerTransport;
+  serverUrl?: string;
 }
 
 function createId(prefix: string) {
@@ -41,13 +70,10 @@ function createPlayer(identity: PlayerIdentity): RoomPlayer {
     id: identity.id,
     displayName: identity.displayName,
     ready: false,
-    joinedAt: new Date().toISOString(),
   };
 }
 
 function seedRooms(): RoomDetails[] {
-  const now = new Date().toISOString();
-
   return [
     {
       id: 'room-blood-pit',
@@ -58,10 +84,8 @@ function seedRooms(): RoomDetails[] {
       status: 'waiting',
       visibility: 'public',
       players: [
-        { id: 'npc-wulfgrim', displayName: 'Wulfgrim', ready: false, joinedAt: now },
+        { id: 'npc-wulfgrim', displayName: 'Wulfgrim', ready: false },
       ],
-      createdAt: now,
-      updatedAt: now,
     },
     {
       id: 'room-bone-throne',
@@ -72,11 +96,9 @@ function seedRooms(): RoomDetails[] {
       status: 'in_game',
       visibility: 'public',
       players: [
-        { id: 'npc-skullcrusher', displayName: 'Skullcrusher', ready: true, joinedAt: now },
-        { id: 'npc-rattlemaw', displayName: 'Rattlemaw', ready: true, joinedAt: now },
+        { id: 'npc-skullcrusher', displayName: 'Skullcrusher', ready: true },
+        { id: 'npc-rattlemaw', displayName: 'Rattlemaw', ready: true },
       ],
-      createdAt: now,
-      updatedAt: now,
     },
     {
       id: 'room-plague-grounds',
@@ -87,10 +109,8 @@ function seedRooms(): RoomDetails[] {
       status: 'waiting',
       visibility: 'private',
       players: [
-        { id: 'npc-rotface', displayName: 'Rotface', ready: false, joinedAt: now },
+        { id: 'npc-rotface', displayName: 'Rotface', ready: false },
       ],
-      createdAt: now,
-      updatedAt: now,
     },
   ];
 }
@@ -125,12 +145,36 @@ function persistRooms(rooms: RoomDetails[]) {
   return rooms;
 }
 
+function createSnapshot(identity: PlayerIdentity | null, roomStates: RoomDetails[]): MultiplayerSnapshot {
+  return {
+    identity,
+    rooms: roomStates.map(toLobbySummary),
+    roomStates,
+  };
+}
+
+function readMultiplayerConfig(): MultiplayerClientConfig {
+  const requestedTransport = import.meta.env.VITE_MULTIPLAYER_TRANSPORT?.trim().toLowerCase();
+  const transport: MultiplayerTransport = requestedTransport === 'socket' ? 'socket' : 'local';
+  const serverUrl = import.meta.env.VITE_MULTIPLAYER_SERVER_URL?.trim() || 'http://localhost:3001';
+
+  return { transport, serverUrl };
+}
+
 export class LocalMultiplayerClient implements MultiplayerClient {
-  async loadSnapshot(): Promise<MultiplayerSnapshot> {
-    return {
-      identity: getStoredIdentity(),
-      rooms: ensureRooms(),
+  private listeners = new Set<MultiplayerSnapshotListener>();
+
+  subscribe(listener: MultiplayerSnapshotListener) {
+    this.listeners.add(listener);
+    listener(this.getSnapshot());
+
+    return () => {
+      this.listeners.delete(listener);
     };
+  }
+
+  async loadSnapshot(): Promise<MultiplayerSnapshot> {
+    return this.getSnapshot();
   }
 
   async saveDisplayName(displayName: string): Promise<PlayerIdentity> {
@@ -149,17 +193,17 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       players: room.players.map(player =>
         player.id === identity.id ? { ...player, displayName: identity.displayName } : player,
       ),
-      updatedAt: room.players.some(player => player.id === identity.id)
-        ? new Date().toISOString()
-        : room.updatedAt,
     }));
 
     persistRooms(updatedRooms);
+    this.emitSnapshot();
     return identity;
   }
 
   async listRooms(): Promise<LobbyRoomSummary[]> {
-    return ensureRooms().map(toLobbySummary);
+    const snapshot = this.getSnapshot();
+    this.emitSnapshot();
+    return snapshot.rooms;
   }
 
   async getRoom(roomIdOrCode: string): Promise<RoomDetails | null> {
@@ -175,7 +219,6 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       throw new Error('A display name is required before creating a room.');
     }
 
-    const now = new Date().toISOString();
     const room: RoomDetails = {
       id: createId('room'),
       name: input.name.trim(),
@@ -185,11 +228,10 @@ export class LocalMultiplayerClient implements MultiplayerClient {
       status: 'waiting',
       visibility: input.visibility,
       players: [createPlayer(identity)],
-      createdAt: now,
-      updatedAt: now,
     };
 
     persistRooms([...ensureRooms(), room]);
+    this.emitSnapshot();
     return room;
   }
 
@@ -217,17 +259,16 @@ export class LocalMultiplayerClient implements MultiplayerClient {
           players: room.players.map(player =>
             player.id === identity.id ? { ...player, displayName: identity.displayName } : player,
           ),
-          updatedAt: new Date().toISOString(),
         }
       : {
           ...room,
           players: [...room.players, createPlayer(identity)],
-          updatedAt: new Date().toISOString(),
         };
 
     const nextRooms = [...rooms];
     nextRooms[roomIndex] = nextRoom;
     persistRooms(nextRooms);
+    this.emitSnapshot();
     return nextRoom;
   }
 
@@ -253,11 +294,11 @@ export class LocalMultiplayerClient implements MultiplayerClient {
             ...existingRoom,
             hostPlayerId: nextHostId,
             players: remainingPlayers,
-            updatedAt: new Date().toISOString(),
           };
         });
 
     persistRooms(nextRooms);
+    this.emitSnapshot();
   }
 
   async setReady(roomId: string, ready: boolean): Promise<RoomDetails | null> {
@@ -278,14 +319,319 @@ export class LocalMultiplayerClient implements MultiplayerClient {
           ? { ...player, ready, displayName: identity.displayName }
           : player,
       ),
-      updatedAt: new Date().toISOString(),
     };
 
     const nextRooms = [...rooms];
     nextRooms[roomIndex] = nextRoom;
     persistRooms(nextRooms);
+    this.emitSnapshot();
     return nextRoom;
+  }
+
+  private getSnapshot() {
+    return createSnapshot(getStoredIdentity(), ensureRooms());
+  }
+
+  private emitSnapshot() {
+    const snapshot = this.getSnapshot();
+    this.listeners.forEach(listener => listener(snapshot));
   }
 }
 
-export const multiplayerClient: MultiplayerClient = new LocalMultiplayerClient();
+export class SocketMultiplayerClient implements MultiplayerClient {
+  private listeners = new Set<MultiplayerSnapshotListener>();
+
+  private socket: Socket<ServerToClientEvents, ClientToServerEvents> | null = null;
+
+  private connectPromise: Promise<void> | null = null;
+
+  private pendingRequest: PendingRequest | null = null;
+
+  private identity: PlayerIdentity | null = getStoredIdentity();
+
+  private sessionReady = false;
+
+  private rooms: LobbyRoomSummary[] = [];
+
+  private roomStates = new Map<string, RoomDetails>();
+
+  constructor(private readonly serverUrl = 'http://localhost:3001') {}
+
+  subscribe(listener: MultiplayerSnapshotListener) {
+    this.listeners.add(listener);
+    listener(this.getSnapshot());
+
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  async loadSnapshot(): Promise<MultiplayerSnapshot> {
+    await this.ensureSocket();
+
+    const storedIdentity = getStoredIdentity();
+    if (storedIdentity?.displayName && (!this.sessionReady || this.identity?.displayName !== storedIdentity.displayName)) {
+      await this.saveDisplayName(storedIdentity.displayName);
+    }
+
+    await this.listRooms();
+    return this.getSnapshot();
+  }
+
+  async saveDisplayName(displayName: string): Promise<PlayerIdentity> {
+    const trimmed = displayName.trim();
+    if (!trimmed) {
+      throw new Error('Display name is required.');
+    }
+
+    await this.ensureSocket();
+
+    return this.beginRequest<PlayerIdentity>({ kind: 'session:set-name' }, () => {
+      this.socket!.emit('session:set-name', { displayName: trimmed });
+    });
+  }
+
+  async listRooms(): Promise<LobbyRoomSummary[]> {
+    await this.ensureSocket();
+
+    return this.beginRequest<LobbyRoomSummary[]>({ kind: 'lobby:list-rooms' }, () => {
+      this.socket!.emit('lobby:list-rooms');
+    });
+  }
+
+  async getRoom(roomIdOrCode: string): Promise<RoomDetails | null> {
+    const lookup = normalizeRoomLookup(roomIdOrCode);
+    const code = normalizeCode(roomIdOrCode);
+
+    return Array.from(this.roomStates.values()).find(room => room.id === lookup || room.code === code) ?? null;
+  }
+
+  async createRoom(input: CreateRoomInput): Promise<RoomDetails> {
+    const trimmedName = input.name.trim();
+    if (!trimmedName) {
+      throw new Error('Room name is required.');
+    }
+
+    await this.ensureSocket();
+
+    return this.beginRequest<RoomDetails>({ kind: 'room:create' }, () => {
+      this.socket!.emit('room:create', { ...input, name: trimmedName });
+    });
+  }
+
+  async joinRoom(input: JoinRoomInput): Promise<RoomDetails | null> {
+    const roomIdOrCode = input.roomIdOrCode.trim();
+    if (!roomIdOrCode) {
+      throw new Error('A room code or room id is required.');
+    }
+
+    await this.ensureSocket();
+
+    return this.beginRequest<RoomDetails | null>({ kind: 'room:join', roomIdOrCode }, () => {
+      this.socket!.emit('room:join', { roomIdOrCode });
+    });
+  }
+
+  async leaveRoom(roomId: string): Promise<void> {
+    await this.ensureSocket();
+
+    return this.beginRequest<void>({ kind: 'room:leave', roomId }, () => {
+      this.socket!.emit('room:leave', { roomId });
+    });
+  }
+
+  async setReady(roomId: string, ready: boolean): Promise<RoomDetails | null> {
+    await this.ensureSocket();
+
+    return this.beginRequest<RoomDetails | null>({ kind: 'room:set-ready', roomId }, () => {
+      this.socket!.emit('room:set-ready', { roomId, ready });
+    });
+  }
+
+  private getSnapshot(): MultiplayerSnapshot {
+    return {
+      identity: this.identity,
+      rooms: this.rooms,
+      roomStates: Array.from(this.roomStates.values()),
+    };
+  }
+
+  private emitSnapshot() {
+    const snapshot = this.getSnapshot();
+    this.listeners.forEach(listener => listener(snapshot));
+  }
+
+  private async ensureSocket() {
+    if (this.socket?.connected) {
+      return;
+    }
+
+    if (this.connectPromise) {
+      return this.connectPromise;
+    }
+
+    const socket = this.socket ?? io(this.serverUrl, {
+      autoConnect: false,
+      withCredentials: false,
+    });
+
+    if (!this.socket) {
+      this.socket = socket;
+      this.bindSocketEvents(socket);
+    }
+
+    this.connectPromise = new Promise<void>((resolve, reject) => {
+      const handleConnect = () => {
+        cleanup();
+        this.connectPromise = null;
+        resolve();
+      };
+
+      const handleError = (error: Error) => {
+        cleanup();
+        this.connectPromise = null;
+        reject(error);
+      };
+
+      const cleanup = () => {
+        socket.off('connect', handleConnect);
+        socket.off('connect_error', handleError);
+      };
+
+      socket.on('connect', handleConnect);
+      socket.on('connect_error', handleError);
+      socket.connect();
+    });
+
+    return this.connectPromise;
+  }
+
+  private bindSocketEvents(socket: Socket<ServerToClientEvents, ClientToServerEvents>) {
+    socket.on('session:ready', payload => {
+      this.identity = payload.player;
+      this.sessionReady = true;
+      saveStoredIdentity(payload.player);
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'session:set-name') {
+        this.resolvePending(payload.player);
+      }
+    });
+
+    socket.on('lobby:rooms', payload => {
+      this.rooms = payload.rooms;
+      this.pruneRoomStates();
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'lobby:list-rooms') {
+        this.resolvePending(payload.rooms);
+        return;
+      }
+
+      if (this.pendingRequest?.kind === 'room:leave' && this.pendingRequest.roomId) {
+        this.roomStates.delete(this.pendingRequest.roomId);
+        this.emitSnapshot();
+        this.resolvePending(undefined);
+      }
+    });
+
+    socket.on('room:state', payload => {
+      this.roomStates.set(payload.room.id, payload.room);
+      this.emitSnapshot();
+
+      if (this.pendingRequest?.kind === 'room:create' || this.pendingRequest?.kind === 'room:join') {
+        this.resolvePending(payload.room);
+        return;
+      }
+
+      if (this.pendingRequest?.kind === 'room:set-ready' && this.pendingRequest.roomId === payload.room.id) {
+        this.resolvePending(payload.room);
+      }
+    });
+
+    socket.on('room:not-found', payload => {
+      if (
+        this.pendingRequest?.kind === 'room:join'
+        && normalizeCode(this.pendingRequest.roomIdOrCode ?? '') === normalizeCode(payload.roomIdOrCode)
+      ) {
+        this.resolvePending(null);
+      }
+    });
+
+    socket.on('room:error', payload => {
+      if (this.pendingRequest) {
+        this.rejectPending(new Error(payload.message));
+        return;
+      }
+
+      console.error('[multiplayer] room:error', payload.message);
+    });
+
+    socket.on('disconnect', () => {
+      this.sessionReady = false;
+      this.rejectPending(new Error('Disconnected from the multiplayer server.'));
+    });
+  }
+
+  private pruneRoomStates() {
+    const knownRoomIds = new Set(this.rooms.map(room => room.id));
+    Array.from(this.roomStates.keys()).forEach(roomId => {
+      if (!knownRoomIds.has(roomId)) {
+        this.roomStates.delete(roomId);
+      }
+    });
+  }
+
+  private beginRequest<TValue>(
+    request: Pick<PendingRequest<TValue>, 'kind' | 'roomId' | 'roomIdOrCode'>,
+    invoke: () => void,
+  ): Promise<TValue> {
+    if (this.pendingRequest) {
+      return Promise.reject(new Error('Another multiplayer action is already in progress.'));
+    }
+
+    return new Promise<TValue>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        if (this.pendingRequest?.timeoutId === timeoutId) {
+          this.pendingRequest = null;
+        }
+        reject(new Error('The multiplayer server did not respond in time.'));
+      }, 8000);
+
+      this.pendingRequest = {
+        ...request,
+        resolve,
+        reject,
+        timeoutId,
+      };
+
+      invoke();
+    });
+  }
+
+  private resolvePending(value: unknown) {
+    if (!this.pendingRequest) return;
+
+    const { resolve, timeoutId } = this.pendingRequest;
+    window.clearTimeout(timeoutId);
+    this.pendingRequest = null;
+    resolve(value);
+  }
+
+  private rejectPending(error: Error) {
+    if (!this.pendingRequest) return;
+
+    const { reject, timeoutId } = this.pendingRequest;
+    window.clearTimeout(timeoutId);
+    this.pendingRequest = null;
+    reject(error);
+  }
+}
+
+export function createConfiguredMultiplayerClient(config = readMultiplayerConfig()): MultiplayerClient {
+  if (config.transport === 'socket') {
+    return new SocketMultiplayerClient(config.serverUrl);
+  }
+
+  return new LocalMultiplayerClient();
+}

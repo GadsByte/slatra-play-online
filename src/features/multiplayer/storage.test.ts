@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadStoredIdentity, saveStoredIdentity } from './storage';
+import { loadStoredIdentity, loadStoredSessionToken, saveStoredIdentity } from './storage';
 
 describe('multiplayer storage identity', () => {
   beforeEach(() => {
@@ -14,6 +14,7 @@ describe('multiplayer storage identity', () => {
       sessionToken: 'session-1',
       displayName: 'Alice',
     });
+    expect(loadStoredSessionToken()).toBe('session-1');
   });
 
   it('migrates stored identities without a session token', () => {
@@ -28,5 +29,6 @@ describe('multiplayer storage identity', () => {
     expect(identity?.displayName).toBe('Legacy');
     expect(identity?.sessionToken).toMatch(/^session-/);
     expect(JSON.parse(window.localStorage.getItem('slatra.multiplayer.identity') ?? '{}').sessionToken).toBe(identity?.sessionToken);
+    expect(window.localStorage.getItem('slatra.multiplayer.session-token')).toBe(identity?.sessionToken);
   });
 });

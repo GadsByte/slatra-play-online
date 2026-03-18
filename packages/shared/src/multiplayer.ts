@@ -233,6 +233,7 @@ export interface MatchCommandRequestDto {
 
 export interface SessionReadyPayload {
   player: PlayerIdentityDto;
+  sessionToken: string;
 }
 
 export interface LobbyRoomsPayload {

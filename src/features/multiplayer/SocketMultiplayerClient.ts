@@ -25,7 +25,6 @@ import {
 
 interface PendingRequest<TValue = unknown> {
   kind:
-    | 'session:set-name'
     | 'lobby:list-rooms'
     | 'room:create'
     | 'room:join'
@@ -53,6 +52,12 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
   private sessionReady = false;
 
+  private sessionRestorePromise: Promise<PlayerIdentityDto | null> | null = null;
+
+  private resolveSessionRestore: ((player: PlayerIdentityDto | null) => void) | null = null;
+
+  private rejectSessionRestore: ((reason?: unknown) => void) | null = null;
+
   private rooms: LobbyRoomSummaryDto[] = [];
 
   private roomStates = new Map<string, RoomDetailsDto>();
@@ -72,12 +77,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
   async loadSnapshot(): Promise<MultiplayerSnapshot> {
     await this.ensureSocket();
-
-    const storedIdentity = getStoredIdentity();
-    if (storedIdentity?.displayName && (!this.sessionReady || this.identity?.displayName !== storedIdentity.displayName)) {
-      await this.saveDisplayName(storedIdentity.displayName);
-    }
-
+    await this.restoreSession();
     await this.listRooms();
     return this.getSnapshot();
   }
@@ -90,10 +90,13 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
     await this.ensureSocket();
     const identity = createIdentity(trimmed, this.identity ?? getStoredIdentity());
+    const restoredIdentity = await this.restoreSession(identity);
 
-    return this.beginRequest<PlayerIdentityDto>({ kind: 'session:set-name' }, () => {
-      this.socket!.emit('session:set-name', { displayName: trimmed, sessionToken: identity.sessionToken });
-    });
+    if (!restoredIdentity) {
+      throw new Error('Unable to restore the multiplayer session.');
+    }
+
+    return restoredIdentity;
   }
 
   async listRooms(): Promise<LobbyRoomSummaryDto[]> {
@@ -232,15 +235,61 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     return this.connectPromise;
   }
 
-  private bindSocketEvents(socket: Socket<ServerToClientEvents, ClientToServerEvents>) {
-    socket.on('session:ready', payload => {
-      this.identity = persistIdentity(payload.player);
-      this.sessionReady = true;
-      this.emitSnapshot();
+  private restoreSession(identityOverride?: PlayerIdentityDto | null): Promise<PlayerIdentityDto | null> {
+    const identity = identityOverride ?? this.identity ?? getStoredIdentity();
 
-      if (this.pendingRequest?.kind === 'session:set-name') {
-        this.resolvePending(payload.player);
+    if (!this.socket?.connected) {
+      this.identity = identity;
+      return Promise.resolve(identity);
+    }
+
+    if (!identity?.displayName?.trim()) {
+      this.identity = null;
+      this.sessionReady = false;
+      this.clearSessionRestore();
+      return Promise.resolve(null);
+    }
+
+    this.identity = identity;
+
+    if (this.sessionRestorePromise) {
+      return this.sessionRestorePromise;
+    }
+
+    this.sessionReady = false;
+    this.sessionRestorePromise = new Promise<PlayerIdentityDto | null>((resolve, reject) => {
+      this.resolveSessionRestore = resolve;
+      this.rejectSessionRestore = reject;
+      this.socket!.emit('session:set-name', {
+        displayName: identity.displayName,
+        sessionToken: identity.sessionToken,
+      });
+    });
+
+    return this.sessionRestorePromise;
+  }
+
+  private bindSocketEvents(socket: Socket<ServerToClientEvents, ClientToServerEvents>) {
+    socket.on('connect', () => {
+      const storedIdentity = this.identity ?? getStoredIdentity();
+      if (storedIdentity?.displayName) {
+        void this.restoreSession(storedIdentity);
+        return;
       }
+
+      this.sessionReady = false;
+      this.emitSnapshot();
+    });
+
+    socket.on('session:ready', payload => {
+      this.identity = persistIdentity({
+        ...payload.player,
+        sessionToken: payload.sessionToken,
+      });
+      this.sessionReady = true;
+      this.resolveSessionRestore?.(this.identity);
+      this.clearSessionRestore();
+      this.emitSnapshot();
     });
 
     socket.on('lobby:rooms', payload => {
@@ -305,6 +354,12 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     });
 
     socket.on('room:error', payload => {
+      if (this.sessionRestorePromise) {
+        this.rejectSessionRestore?.(new Error(payload.message));
+        this.clearSessionRestore();
+        return;
+      }
+
       if (this.pendingRequest) {
         this.rejectPending(new Error(payload.message));
         return;
@@ -324,6 +379,7 @@ export class SocketMultiplayerClient implements MultiplayerClient {
 
     socket.on('disconnect', () => {
       this.sessionReady = false;
+      this.clearSessionRestore(new Error('Disconnected from the multiplayer server.'));
       this.rejectPending(new Error('Disconnected from the multiplayer server.'));
     });
   }
@@ -389,5 +445,16 @@ export class SocketMultiplayerClient implements MultiplayerClient {
     window.clearTimeout(timeoutId);
     this.pendingRequest = null;
     reject(error);
+  }
+
+  private clearSessionRestore(error?: Error) {
+    const reject = this.rejectSessionRestore;
+    this.sessionRestorePromise = null;
+    this.resolveSessionRestore = null;
+    this.rejectSessionRestore = null;
+
+    if (error) {
+      reject?.(error);
+    }
   }
 }

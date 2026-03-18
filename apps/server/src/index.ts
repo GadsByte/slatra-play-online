@@ -97,7 +97,7 @@ io.on('connection', socket => {
     }
 
     const player = store.registerPlayer(socket.id, payload.sessionToken, payload.displayName);
-    socket.emit('session:ready', { player });
+    socket.emit('session:ready', { player, sessionToken: player.sessionToken });
     const currentRoomId = store.getPlayer(socket.id)?.roomId;
     if (currentRoomId) {
       socket.join(currentRoomId);

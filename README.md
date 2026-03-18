@@ -6,7 +6,7 @@ SLATRA is a browser adaptation of a tactical 2-player board game. The current re
 
 - **Current runnable frontend:** repo root (`src/`, `vite.config.ts`, current `npm run dev` flow)
 - **Local game mode:** implemented client-side and still the gameplay reference
-- **Multiplayer UI:** frontend-only mock flow with provider-backed state and local persistence
+- **Multiplayer UI:** socket-backed by default; in-browser local multiplayer remains available only as an explicit offline/demo mode
 - **Backend:** initial Socket.IO server milestone now scaffolded in `apps/server`
 - **Rules engine extraction:** started in `packages/engine`
 
@@ -71,9 +71,10 @@ npm run dev
 ```
 
 Frontend multiplayer transport selection is environment-driven:
-- `VITE_MULTIPLAYER_TRANSPORT=local` forces the local in-browser mock client.
-- `VITE_MULTIPLAYER_TRANSPORT=socket` forces the Socket.IO-backed client.
-- When unset, development defaults to `local` and deployed/production builds default to `socket`.
+- `VITE_MULTIPLAYER_TRANSPORT=socket` is the required default for normal multiplayer usage in local development, preview, and production.
+- `VITE_MULTIPLAYER_TRANSPORT=local` is an explicit offline/demo-only override for the in-browser mock client.
+- `VITE_MULTIPLAYER_LOCAL_SEEDS=demo` is optional and only applies when local transport is enabled; it injects clearly labeled `[Demo]` rooms/matches into browser storage.
+- If local transport is enabled together with demo seeding, **you will see dummy rooms** and dummy match state in the multiplayer UI.
 - `VITE_MULTIPLAYER_SERVER_URL` sets the backend Socket.IO server URL. If omitted, development falls back to `http://localhost:3001` and production uses the current site origin.
 
 ### Backend
@@ -85,16 +86,28 @@ npm run dev:server
 
 ## Environment variables
 
+### Frontend environment matrix
+
+Use the following exact frontend settings unless you are intentionally running the offline/demo transport:
+
+| Environment | `VITE_MULTIPLAYER_TRANSPORT` | `VITE_MULTIPLAYER_SERVER_URL` | `VITE_MULTIPLAYER_LOCAL_SEEDS` | Notes |
+| --- | --- | --- | --- | --- |
+| Local development | `socket` | `http://localhost:3001` | Unset | Required for normal local multiplayer against `npm run dev:server`. |
+| Local development (offline/demo only) | `local` | Optional; ignored by local transport | Unset by default, or `demo` to preload demo data | If `VITE_MULTIPLAYER_LOCAL_SEEDS=demo`, you will see dummy rooms and dummy match state. |
+| Preview build | `socket` | `https://<preview-backend-host>` or the preview frontend origin when the backend is served from the same origin | Unset | Required so previews exercise the real Socket.IO path instead of mock data. |
+| Production | `socket` | `https://<production-backend-host>` or the production frontend origin when the backend is served from the same origin | Unset | Required for live multiplayer. Do not enable local transport in production. |
+
 ### Local development
 
-| Surface | Variable | Required? | Purpose | Local default |
+| Surface | Variable | Required? | Purpose | Expected local value |
 | --- | --- | --- | --- | --- |
-| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Optional | Chooses the multiplayer transport implementation. | `local` in development |
-| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Optional | Points the frontend at the Socket.IO backend when socket transport is enabled. | `http://localhost:3001` |
+| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Yes | Chooses the multiplayer transport implementation. | `socket` |
+| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Yes | Points the frontend at the Socket.IO backend for normal multiplayer development. | `http://localhost:3001` |
+| Frontend | `VITE_MULTIPLAYER_LOCAL_SEEDS` | No | Opt-in demo seed data for explicit local transport only. | Unset, or `demo` for offline/demo work |
 | Server | `PORT` | Optional | HTTP + Socket.IO port for `apps/server`. | `3001` |
-| Server | `CLIENT_ORIGIN` | Optional | CORS origin allowed to connect to the backend. | `*` |
+| Server | `CLIENT_ORIGIN` | Optional | CORS origin allowed to connect to the backend. | `http://localhost:8080` |
 
-Example local pairing:
+Example local pairing for real multiplayer:
 
 ```sh
 # frontend
@@ -106,12 +119,21 @@ PORT=3001
 CLIENT_ORIGIN=http://localhost:8080
 ```
 
+Example offline/demo-only local transport:
+
+```sh
+# frontend
+VITE_MULTIPLAYER_TRANSPORT=local
+VITE_MULTIPLAYER_LOCAL_SEEDS=demo
+```
+
 ### Deployed environments
 
 | Surface | Variable | Required? | Purpose |
 | --- | --- | --- | --- |
-| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Yes | Set to `socket` for production multiplayer builds. |
-| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Yes | Public base URL for the deployed backend if it differs from the frontend origin. |
+| Frontend | `VITE_MULTIPLAYER_TRANSPORT` | Yes | Set to `socket` for preview and production builds. |
+| Frontend | `VITE_MULTIPLAYER_SERVER_URL` | Yes | Set to the exact public Socket.IO backend origin used by that environment. |
+| Frontend | `VITE_MULTIPLAYER_LOCAL_SEEDS` | No | Leave unset in preview and production; only use `demo` for explicit offline/demo work. |
 | Server | `PORT` | Usually platform-provided | Listening port used by the backend process. |
 | Server | `CLIENT_ORIGIN` | Yes | Exact deployed frontend origin allowed by Socket.IO CORS. |
 

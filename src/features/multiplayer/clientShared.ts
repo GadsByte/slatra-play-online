@@ -16,6 +16,10 @@ export interface MultiplayerClientConfig {
   serverUrl: string;
 }
 
+function readEnvFlag(name: string) {
+  return import.meta.env[name]?.trim().toLowerCase();
+}
+
 export function createId(prefix: string) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -84,16 +88,14 @@ export function createSnapshot(
 }
 
 export function readMultiplayerConfig(): MultiplayerClientConfig {
-  const requestedTransport = import.meta.env.VITE_MULTIPLAYER_TRANSPORT?.trim().toLowerCase();
-  const transport: MultiplayerTransport = requestedTransport === 'local'
-    ? 'local'
-    : requestedTransport === 'socket'
-      ? 'socket'
-      : import.meta.env.PROD
-        ? 'socket'
-        : 'local';
+  const requestedTransport = readEnvFlag('VITE_MULTIPLAYER_TRANSPORT');
+  const transport: MultiplayerTransport = requestedTransport === 'local' ? 'local' : 'socket';
   const defaultServerUrl = import.meta.env.PROD ? window.location.origin : 'http://localhost:3001';
   const serverUrl = import.meta.env.VITE_MULTIPLAYER_SERVER_URL?.trim() || defaultServerUrl;
 
   return { transport, serverUrl };
+}
+
+export function shouldSeedLocalMultiplayerDemoData() {
+  return readEnvFlag('VITE_MULTIPLAYER_LOCAL_SEEDS') === 'demo';
 }

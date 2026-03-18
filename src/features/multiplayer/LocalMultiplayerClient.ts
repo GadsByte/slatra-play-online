@@ -25,88 +25,102 @@ import {
   normalizeCode,
   normalizeRoomLookup,
   persistIdentity,
+  shouldSeedLocalMultiplayerDemoData,
   type MultiplayerSnapshotListener,
 } from './clientShared';
 
-function seedRooms(): RoomDetailsDto[] {
-  return [
-    {
-      id: 'room-blood-pit',
-      name: 'The Blood Pit',
-      code: 'BLOOD1',
-      hostPlayerId: 'npc-wulfgrim',
-      maxPlayers: 2,
-      status: 'waiting',
-      visibility: 'public',
-      activeMatchId: null,
-      players: [
-        { id: 'npc-wulfgrim', displayName: 'Wulfgrim', ready: false },
-      ],
-    },
-    {
-      id: 'room-bone-throne',
-      name: 'Bone Throne Arena',
-      code: 'BONES2',
-      hostPlayerId: 'npc-skullcrusher',
-      maxPlayers: 2,
-      status: 'in_game',
-      visibility: 'public',
-      activeMatchId: 'match-bone-throne',
-      players: [
-        { id: 'npc-skullcrusher', displayName: 'Skullcrusher', ready: true },
-        { id: 'npc-rattlemaw', displayName: 'Rattlemaw', ready: true },
-      ],
-    },
-    {
-      id: 'room-plague-grounds',
-      name: 'Plague Grounds',
-      code: 'PLAGUE',
-      hostPlayerId: 'npc-rotface',
-      maxPlayers: 2,
-      status: 'waiting',
-      visibility: 'private',
-      activeMatchId: null,
-      players: [
-        { id: 'npc-rotface', displayName: 'Rotface', ready: false },
-      ],
-    },
-  ];
+const DEMO_ROOMS: RoomDetailsDto[] = [
+  {
+    id: 'demo-room-blood-pit',
+    name: '[Demo] The Blood Pit',
+    code: 'DEMO01',
+    hostPlayerId: 'demo-npc-wulfgrim',
+    maxPlayers: 2,
+    status: 'waiting',
+    visibility: 'public',
+    activeMatchId: null,
+    players: [
+      { id: 'demo-npc-wulfgrim', displayName: '[Demo] Wulfgrim', ready: false },
+    ],
+  },
+  {
+    id: 'demo-room-bone-throne',
+    name: '[Demo] Bone Throne Arena',
+    code: 'DEMO02',
+    hostPlayerId: 'demo-npc-skullcrusher',
+    maxPlayers: 2,
+    status: 'in_game',
+    visibility: 'public',
+    activeMatchId: 'demo-match-bone-throne',
+    players: [
+      { id: 'demo-npc-skullcrusher', displayName: '[Demo] Skullcrusher', ready: true },
+      { id: 'demo-npc-rattlemaw', displayName: '[Demo] Rattlemaw', ready: true },
+    ],
+  },
+  {
+    id: 'demo-room-plague-grounds',
+    name: '[Demo] Plague Grounds (Private)',
+    code: 'DEMO03',
+    hostPlayerId: 'demo-npc-rotface',
+    maxPlayers: 2,
+    status: 'waiting',
+    visibility: 'private',
+    activeMatchId: null,
+    players: [
+      { id: 'demo-npc-rotface', displayName: '[Demo] Rotface', ready: false },
+    ],
+  },
+];
+
+const DEMO_MATCHES: MatchSnapshotDto[] = [
+  {
+    id: 'demo-match-bone-throne',
+    roomId: 'demo-room-bone-throne',
+    status: 'active',
+    seats: [
+      { seat: 'plague', playerId: 'demo-npc-skullcrusher' },
+      { seat: 'bone', playerId: 'demo-npc-rattlemaw' },
+    ],
+    gameState: createInitialState(),
+    createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+    updatedAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
+    revision: 0,
+  },
+];
+
+function createDemoRooms(): RoomDetailsDto[] {
+  return DEMO_ROOMS.map(room => ({
+    ...room,
+    players: room.players.map(player => ({ ...player })),
+  }));
 }
 
-function seedMatches(): MatchSnapshotDto[] {
-  return [
-    {
-      id: 'match-bone-throne',
-      roomId: 'room-bone-throne',
-      status: 'active',
-      seats: [
-        { seat: 'plague', playerId: 'npc-skullcrusher' },
-        { seat: 'bone', playerId: 'npc-rattlemaw' },
-      ],
-      gameState: createInitialState(),
-      createdAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
-      updatedAt: new Date('2026-01-01T00:00:00.000Z').toISOString(),
-      revision: 0,
-    },
-  ];
+function createDemoMatches(): MatchSnapshotDto[] {
+  return DEMO_MATCHES.map(match => ({
+    ...match,
+    seats: match.seats.map(seat => ({ ...seat })),
+    gameState: createInitialState(),
+  }));
 }
 
 function ensureRooms(): RoomDetailsDto[] {
   const stored = loadStoredRooms();
   if (stored.length > 0) return stored;
+  if (!shouldSeedLocalMultiplayerDemoData()) return [];
 
-  const seeded = seedRooms();
-  saveStoredRooms(seeded);
-  return seeded;
+  const demoRooms = createDemoRooms();
+  saveStoredRooms(demoRooms);
+  return demoRooms;
 }
 
 function ensureMatches(): MatchSnapshotDto[] {
   const stored = loadStoredMatches();
   if (stored.length > 0) return stored;
+  if (!shouldSeedLocalMultiplayerDemoData()) return [];
 
-  const seeded = seedMatches();
-  saveStoredMatches(seeded);
-  return seeded;
+  const demoMatches = createDemoMatches();
+  saveStoredMatches(demoMatches);
+  return demoMatches;
 }
 
 function persistRooms(rooms: RoomDetailsDto[]) {

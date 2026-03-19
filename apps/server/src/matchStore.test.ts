@@ -1,6 +1,10 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { RoomDetailsDto } from '@slatra/shared';
 import { MatchStore } from './matchStore.js';
+import { FileMatchSnapshotRepository, JsonFileServerStateStore } from './persistence.js';
 
 function createRoom(overrides: Partial<RoomDetailsDto> = {}): RoomDetailsDto {
   return {
@@ -61,5 +65,38 @@ describe('MatchStore', () => {
     expect(result?.update.reason).toBe('command_applied');
     expect(result?.update.match.revision).toBe(1);
     expect(result?.update.command).toEqual({ type: 'PLACE_HAZARD', position: { row: 3, col: 0 } });
+  });
+
+  it('restores an active persisted match snapshot after a process restart', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'slatra-match-store-'));
+    const stateFile = join(tempDir, 'server-state.json');
+
+    try {
+      const room = createRoom();
+      const stateStore = new JsonFileServerStateStore(stateFile);
+      const store = new MatchStore({
+        matches: new FileMatchSnapshotRepository(stateStore),
+      });
+
+      const createdMatch = store.createMatch(room);
+      store.applyCommand(room.id, { type: 'PLACE_HAZARD', position: { row: 3, col: 0 } });
+
+      const restoredStore = new MatchStore({
+        matches: new FileMatchSnapshotRepository(new JsonFileServerStateStore(stateFile)),
+      });
+      restoredStore.restore();
+
+      const restoredMatch = restoredStore.getMatch(room.id);
+
+      expect(restoredMatch).not.toBeNull();
+      expect(restoredMatch?.id).toBe(createdMatch.id);
+      expect(restoredMatch?.revision).toBe(1);
+      expect(restoredMatch?.createdAt).toBe(createdMatch.createdAt);
+      expect(restoredMatch?.updatedAt).not.toBe(createdMatch.createdAt);
+      expect(restoredMatch?.seats).toEqual(createdMatch.seats);
+      expect(restoredStore.getMatchRecord(room.id)?.rng.snapshot().seed).toBeDefined();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

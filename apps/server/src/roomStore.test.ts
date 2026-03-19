@@ -1,5 +1,9 @@
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RoomPlayerDto } from '@slatra/shared';
+import { FilePlayerSessionRepository, FileRoomRepository, JsonFileServerStateStore } from './persistence.js';
 import { RoomStore } from './roomStore.js';
 
 describe('RoomStore reconnect sessions', () => {
@@ -58,5 +62,53 @@ describe('RoomStore reconnect sessions', () => {
     expect(updatedRoom?.players[0]?.ready).toBe(false);
     expect(store.getPlayer('socket-guest')).toBeNull();
     expect(mutations).toContain(room.id);
+  });
+
+  it('restores persisted player sessions and room membership after a process restart', () => {
+    const tempDir = mkdtempSync(join(tmpdir(), 'slatra-room-store-'));
+    const stateFile = join(tempDir, 'server-state.json');
+    const stateStore = new JsonFileServerStateStore(stateFile);
+
+    try {
+      const store = new RoomStore(undefined, {
+        players: new FilePlayerSessionRepository(stateStore),
+        rooms: new FileRoomRepository(stateStore),
+      });
+
+      const host = store.registerPlayer('socket-host', 'session-host', 'Host');
+      store.registerPlayer('socket-guest', 'session-guest', 'Guest');
+      const createdRoom = store.createRoom('socket-host', { name: 'Arena', visibility: 'private' }).room!;
+
+      store.joinRoom('socket-guest', { roomIdOrCode: createdRoom.code });
+      store.setReady('socket-host', { roomId: createdRoom.id, ready: true });
+      store.setReady('socket-guest', { roomId: createdRoom.id, ready: true });
+
+      const restoredStateStore = new JsonFileServerStateStore(stateFile);
+      const restoredStore = new RoomStore(undefined, {
+        players: new FilePlayerSessionRepository(restoredStateStore),
+        rooms: new FileRoomRepository(restoredStateStore),
+      });
+      restoredStore.restore();
+
+      const reboundHost = restoredStore.registerPlayer('socket-host-rebound', 'session-host', 'Host Reloaded');
+      const reboundGuest = restoredStore.registerPlayer('socket-guest-rebound', 'session-guest', 'Guest');
+      const restoredRoom = restoredStore.getRoom(createdRoom.id);
+
+      expect(reboundHost.id).toBe(host.id);
+      expect(reboundGuest.id).not.toBe(host.id);
+      expect(restoredRoom).toMatchObject({
+        id: createdRoom.id,
+        code: createdRoom.code,
+        visibility: 'private',
+        hostPlayerId: host.id,
+        status: 'waiting',
+      });
+      expect(restoredRoom?.players).toEqual([
+        { id: host.id, displayName: 'Host Reloaded', ready: true },
+        { id: reboundGuest.id, displayName: 'Guest', ready: true },
+      ]);
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

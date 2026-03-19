@@ -7,11 +7,12 @@ Initial Node.js + TypeScript + Socket.IO backend milestone for SLATRA.
 - `GET /health`
 - Socket.IO connection
 - player identity / display-name registration
-- in-memory room list
+- persistent room list with restart recovery
 - create room
 - join room
 - leave room
 - ready toggle
+- persisted player sessions, rooms, and active matches
 
 ## Local run
 
@@ -41,12 +42,14 @@ Suggested local values live in `.env.example`:
 ```sh
 PORT=3001
 CLIENT_ORIGIN=http://localhost:8080
+PERSISTENCE_FILE=.data/slatra-server-state.json
 ```
 
 ### Deployed environments
 
 - `PORT` — production listening port. Most hosts inject this automatically; if they do not, set it explicitly.
 - `CLIENT_ORIGIN` — required deployed frontend origin allowed to connect to this Socket.IO server. Set this to the exact frontend URL for production.
+- `PERSISTENCE_FILE` — filesystem path for the JSON snapshot that stores player sessions, room state, and active matches across process restarts. Defaults to `.data/slatra-server-state.json` relative to the working directory.
 
 If the frontend is deployed on a different origin than the backend, this must align with the frontend's `VITE_MULTIPLAYER_SERVER_URL` value documented in the root `README.md`.
 
@@ -76,7 +79,6 @@ npm run deploy:production
 
 ## Notes
 
-- Room state is in-memory only.
-- No database or persistence is used yet.
-- Match state is still ephemeral and process-local.
+- The server now restores persisted player sessions, rooms, and active matches from the JSON snapshot referenced by `PERSISTENCE_FILE`.
+- Persistence currently uses a local filesystem snapshot rather than an external database.
 - Frontend multiplayer transport is environment-driven and can now be verified with a provider smoke test before deploy.

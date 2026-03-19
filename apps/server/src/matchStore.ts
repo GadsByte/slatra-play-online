@@ -1,9 +1,32 @@
 import type { MatchCommandDto, MatchSnapshotDto, MatchStateUpdatePayload, RoomDetailsDto, RoomId } from '@slatra/shared';
 import { applyCommand, type GameCommand } from '../../../packages/engine/src/slatra/index.js';
-import { createMatchState, type MatchStateRecord, toMatchStateUpdate, toSnapshot } from './matchState.js';
+import { createMatchState, type MatchStateRecord, restoreMatchState, toMatchStateUpdate, toPersistedMatchSnapshot, toSnapshot } from './matchState.js';
+import { InMemoryMatchSnapshotRepository, type MatchSnapshotRepository } from './persistence.js';
+
+export interface MatchStoreRepositories {
+  matches?: MatchSnapshotRepository;
+}
 
 export class MatchStore {
   private matchesByRoomId = new Map<RoomId, MatchStateRecord>();
+
+  private readonly matchRepository: MatchSnapshotRepository;
+
+  constructor(repositories: MatchStoreRepositories = {}) {
+    this.matchRepository = repositories.matches ?? new InMemoryMatchSnapshotRepository();
+  }
+
+  restore() {
+    this.matchesByRoomId.clear();
+
+    this.matchRepository.list().forEach(match => {
+      this.matchesByRoomId.set(match.roomId, restoreMatchState(match));
+    });
+  }
+
+  listMatchRoomIds(): RoomId[] {
+    return Array.from(this.matchesByRoomId.keys());
+  }
 
   getMatch(roomId: RoomId): MatchSnapshotDto | null {
     const match = this.matchesByRoomId.get(roomId);
@@ -22,6 +45,7 @@ export class MatchStore {
 
     const match = createMatchState(room);
     this.matchesByRoomId.set(room.id, match);
+    this.persistMatch(match);
     return toSnapshot(match);
   }
 
@@ -44,6 +68,7 @@ export class MatchStore {
     match.gameState = nextState;
     match.revision += 1;
     match.updatedAt = new Date().toISOString();
+    this.persistMatch(match);
 
     return {
       update: toMatchStateUpdate(match, 'command_applied', command),
@@ -53,5 +78,10 @@ export class MatchStore {
 
   deleteMatch(roomId: RoomId) {
     this.matchesByRoomId.delete(roomId);
+    this.matchRepository.delete(roomId);
+  }
+
+  private persistMatch(match: MatchStateRecord) {
+    this.matchRepository.save(toPersistedMatchSnapshot(match));
   }
 }

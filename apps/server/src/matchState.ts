@@ -2,6 +2,7 @@ import { randomInt, randomUUID } from 'node:crypto';
 import type { MatchCommandDto, MatchSnapshotDto, MatchStateUpdatePayload, RoomDetailsDto, RoomId } from '@slatra/shared';
 import type { EngineRandom, Faction, GameState } from '../../../packages/engine/src/slatra/index.js';
 import { createInitialState } from '../../../packages/engine/src/slatra/index.js';
+import type { PersistedMatchSnapshotRecord } from './persistence.js';
 
 export interface BackendRngState {
   seed: number;
@@ -99,5 +100,28 @@ export function toMatchStateUpdate(
     reason,
     command,
     emittedAt: new Date().toISOString(),
+  };
+}
+
+
+export function restoreMatchState(match: PersistedMatchSnapshotRecord): MatchStateRecord {
+  return {
+    id: match.id,
+    roomId: match.roomId,
+    status: match.status,
+    playerFactions: Object.fromEntries(match.seats.map(seat => [seat.playerId, seat.seat])) as Record<string, Faction>,
+    gameState: structuredClone(match.gameState),
+    rng: new BackendMatchRandom(match.rngState.seed, match.rngState.state),
+    createdAt: match.createdAt,
+    updatedAt: match.updatedAt,
+    revision: match.revision,
+  };
+}
+
+export function toPersistedMatchSnapshot(match: MatchStateRecord): PersistedMatchSnapshotRecord {
+  return {
+    ...toSnapshot(match),
+    gameState: structuredClone(match.gameState),
+    rngState: match.rng.snapshot(),
   };
 }

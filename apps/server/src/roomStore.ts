@@ -12,15 +12,19 @@ import {
   SetReadyRequestDto,
 } from '@slatra/shared';
 import { randomUUID } from 'node:crypto';
+import {
+  InMemoryPlayerSessionRepository,
+  InMemoryRoomRepository,
+  type PersistedPlayerSessionRecord,
+  type PersistedRoomRecord,
+  type PlayerSessionRepository,
+  type RoomRepository,
+} from './persistence.js';
 
 const DISCONNECT_GRACE_PERIOD_MS = 10_000;
 
-interface PlayerSession {
-  id: string;
-  sessionToken: string;
+interface PlayerSession extends PersistedPlayerSessionRecord {
   socketId: string | null;
-  displayName: string;
-  roomId: string | null;
   disconnectTimer: NodeJS.Timeout | null;
 }
 
@@ -43,6 +47,11 @@ interface MutationResult {
   clearedMatchRoomIds?: string[];
 }
 
+export interface RoomStoreRepositories {
+  players?: PlayerSessionRepository;
+  rooms?: RoomRepository;
+}
+
 function createRoomCode(): string {
   return randomUUID().replace(/-/g, '').slice(0, 6).toUpperCase();
 }
@@ -62,7 +71,46 @@ export class RoomStore {
 
   private rooms = new Map<string, RoomRecord>();
 
-  constructor(private readonly onMutation?: (changes: MutationResult) => void) {}
+  private readonly playerSessionRepository: PlayerSessionRepository;
+
+  private readonly roomRepository: RoomRepository;
+
+  constructor(
+    private readonly onMutation?: (changes: MutationResult) => void,
+    repositories: RoomStoreRepositories = {},
+  ) {
+    this.playerSessionRepository = repositories.players ?? new InMemoryPlayerSessionRepository();
+    this.roomRepository = repositories.rooms ?? new InMemoryRoomRepository();
+  }
+
+  restore() {
+    this.clearDisconnectTimers();
+    this.playersBySessionToken.clear();
+    this.sessionTokenBySocketId.clear();
+    this.rooms.clear();
+
+    this.roomRepository.list().forEach(room => {
+      this.rooms.set(room.id, this.fromPersistedRoom(room));
+    });
+
+    this.playerSessionRepository.list().forEach(session => {
+      const normalizedRoomId = session.roomId && this.rooms.has(session.roomId) ? session.roomId : null;
+      const restoredSession: PlayerSession = {
+        ...session,
+        roomId: normalizedRoomId,
+        socketId: null,
+        disconnectTimer: null,
+      };
+
+      this.playersBySessionToken.set(restoredSession.sessionToken, restoredSession);
+
+      if (normalizedRoomId !== session.roomId) {
+        this.persistPlayer(restoredSession);
+      }
+    });
+
+    this.reconcileRestoredRooms();
+  }
 
   get connectionCount() {
     return this.sessionTokenBySocketId.size;
@@ -102,8 +150,11 @@ export class RoomStore {
       const player = room?.players.get(session.id);
       if (room && player) {
         room.players.set(session.id, { ...player, displayName: trimmedDisplayName });
+        this.persistRoom(room);
       }
     }
+
+    this.persistPlayer(session);
 
     return {
       id: session.id,
@@ -181,6 +232,8 @@ export class RoomStore {
 
     this.rooms.set(room.id, room);
     player.roomId = room.id;
+    this.persistRoom(room);
+    this.persistPlayer(player);
 
     const updatedRoomIds = [...(leaveResult.changes?.updatedRoomIds ?? []), room.id];
     const removedRoomIds = leaveResult.changes?.removedRoomIds ?? [];
@@ -216,6 +269,8 @@ export class RoomStore {
       ready: room.players.get(player.id)?.ready ?? false,
     });
     player.roomId = room.id;
+    this.persistRoom(room);
+    this.persistPlayer(player);
 
     const updatedRoomIds = [...(leaveResult.changes?.updatedRoomIds ?? []), room.id];
     const removedRoomIds = leaveResult.changes?.removedRoomIds ?? [];
@@ -252,6 +307,7 @@ export class RoomStore {
       ready: input.ready,
       displayName: player.displayName,
     });
+    this.persistRoom(room);
 
     return { room: this.toRoomDetails(room), changes: { updatedRoomIds: [room.id] } };
   }
@@ -262,6 +318,23 @@ export class RoomStore {
 
     room.status = 'in_game';
     room.activeMatchId = matchId;
+    this.persistRoom(room);
+
+    return this.toRoomDetails(room);
+  }
+
+  clearActiveMatch(roomId: RoomId): RoomDetailsDto | null {
+    const room = this.rooms.get(roomId);
+    if (!room || !room.activeMatchId) {
+      return room ? this.toRoomDetails(room) : null;
+    }
+
+    room.status = 'waiting';
+    room.activeMatchId = null;
+    room.players.forEach((existingPlayer, existingPlayerId) => {
+      room.players.set(existingPlayerId, { ...existingPlayer, ready: false });
+    });
+    this.persistRoom(room);
 
     return this.toRoomDetails(room);
   }
@@ -285,6 +358,7 @@ export class RoomStore {
 
     if (!player.roomId) {
       this.playersBySessionToken.delete(sessionToken);
+      this.playerSessionRepository.delete(sessionToken);
       if (player.disconnectTimer) {
         clearTimeout(player.disconnectTimer);
       }
@@ -303,6 +377,7 @@ export class RoomStore {
 
       const result = this.leaveRoomForSession(current, current.roomId ?? undefined);
       this.playersBySessionToken.delete(sessionToken);
+      this.playerSessionRepository.delete(sessionToken);
       if (result.changes) {
         this.onMutation?.(result.changes);
       }
@@ -320,11 +395,13 @@ export class RoomStore {
     const room = this.rooms.get(roomId);
     if (!room) {
       player.roomId = null;
+      this.persistPlayer(player);
       return { roomId, changes: { updatedRoomIds: [], leftRoomId: roomId } };
     }
 
     room.players.delete(player.id);
     player.roomId = null;
+    this.persistPlayer(player);
 
     if (player.disconnectTimer) {
       clearTimeout(player.disconnectTimer);
@@ -335,6 +412,7 @@ export class RoomStore {
 
     if (room.players.size === 0) {
       this.rooms.delete(room.id);
+      this.roomRepository.delete(room.id);
       return {
         roomId: room.id,
         changes: {
@@ -360,8 +438,87 @@ export class RoomStore {
     }
 
     updatedRoomIds.push(room.id);
+    this.persistRoom(room);
 
     return { roomId: room.id, changes: { updatedRoomIds, leftRoomId: room.id, clearedMatchRoomIds } };
+  }
+
+  private reconcileRestoredRooms() {
+    this.rooms.forEach((room, roomId) => {
+      const validPlayers = Array.from(room.players.values()).filter(roomPlayer =>
+        Array.from(this.playersBySessionToken.values()).some(session => session.id === roomPlayer.id && session.roomId === roomId),
+      );
+
+      room.players = new Map(validPlayers.map(player => [player.id, player]));
+
+      if (room.players.size === 0) {
+        this.rooms.delete(roomId);
+        this.roomRepository.delete(roomId);
+        return;
+      }
+
+      if (!room.players.has(room.hostPlayerId)) {
+        room.hostPlayerId = room.players.keys().next().value as string;
+      }
+
+      this.persistRoom(room);
+    });
+
+    this.playersBySessionToken.forEach(session => {
+      if (!session.roomId) {
+        return;
+      }
+
+      const room = this.rooms.get(session.roomId);
+      if (room?.players.has(session.id)) {
+        return;
+      }
+
+      session.roomId = null;
+      this.persistPlayer(session);
+    });
+  }
+
+  private fromPersistedRoom(room: PersistedRoomRecord): RoomRecord {
+    return {
+      ...room,
+      players: new Map(room.players.map(player => [player.id, { ...player }])),
+    };
+  }
+
+  private toPersistedRoom(room: RoomRecord): PersistedRoomRecord {
+    return {
+      id: room.id,
+      name: room.name,
+      code: room.code,
+      hostPlayerId: room.hostPlayerId,
+      maxPlayers: room.maxPlayers,
+      status: room.status,
+      visibility: room.visibility,
+      activeMatchId: room.activeMatchId,
+      players: Array.from(room.players.values()).map(player => ({ ...player })),
+    };
+  }
+
+  private persistPlayer(player: PlayerSession) {
+    this.playerSessionRepository.save({
+      id: player.id,
+      sessionToken: player.sessionToken,
+      displayName: player.displayName,
+      roomId: player.roomId,
+    });
+  }
+
+  private persistRoom(room: RoomRecord) {
+    this.roomRepository.save(this.toPersistedRoom(room));
+  }
+
+  private clearDisconnectTimers() {
+    this.playersBySessionToken.forEach(player => {
+      if (player.disconnectTimer) {
+        clearTimeout(player.disconnectTimer);
+      }
+    });
   }
 
   private toRoomDetails(room: RoomRecord): RoomDetailsDto {

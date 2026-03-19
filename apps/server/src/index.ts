@@ -1,21 +1,71 @@
 import { createServer } from 'node:http';
 import {
   ClientToServerEvents,
-  type MatchCommandDto,
   type GameplayErrorPayload,
   HealthResponseDto,
+  type MatchCommandDto,
   RoomId,
-  ServerToClientEvents,
   SERVER_INFO,
+  ServerToClientEvents,
 } from '@slatra/shared';
 import { Server } from 'socket.io';
 import { getServerConfig } from './config.js';
 import { validatePlayerCommand } from './matchGuards.js';
 import { MatchStore } from './matchStore.js';
+import { FileMatchSnapshotRepository, FilePlayerSessionRepository, FileRoomRepository, JsonFileServerStateStore } from './persistence.js';
 import { RoomStore } from './roomStore.js';
 
 const config = getServerConfig();
-const matchStore = new MatchStore();
+const persistenceStore = new JsonFileServerStateStore(config.persistenceFilePath);
+const matchStore = new MatchStore({
+  matches: new FileMatchSnapshotRepository(persistenceStore),
+});
+
+function cleanupRemovedMatches(roomIds: string[] = []) {
+  roomIds.forEach(roomId => {
+    matchStore.deleteMatch(roomId);
+  });
+}
+
+function cleanupEndedMatches(roomIds: string[] = []) {
+  roomIds.forEach(roomId => {
+    matchStore.deleteMatch(roomId);
+  });
+}
+
+const store = new RoomStore(changes => {
+  cleanupRemovedMatches(changes.removedRoomIds);
+  cleanupEndedMatches(changes.clearedMatchRoomIds);
+  changes.updatedRoomIds.forEach(emitRoomState);
+  broadcastLobbyRooms();
+}, {
+  players: new FilePlayerSessionRepository(persistenceStore),
+  rooms: new FileRoomRepository(persistenceStore),
+});
+
+store.restore();
+matchStore.restore();
+
+store.listRooms().forEach(room => {
+  const restoredMatch = matchStore.getMatch(room.id);
+
+  if (restoredMatch) {
+    if (room.status !== 'in_game' || room.activeMatchId !== restoredMatch.id) {
+      store.markRoomInGame(room.id, restoredMatch.id);
+    }
+    return;
+  }
+
+  if (room.activeMatchId || room.status === 'in_game') {
+    store.clearActiveMatch(room.id);
+  }
+});
+
+matchStore.listMatchRoomIds().forEach(roomId => {
+  if (!store.getRoom(roomId)) {
+    matchStore.deleteMatch(roomId);
+  }
+});
 
 const httpServer = createServer((request, response) => {
   if (request.url === '/health') {
@@ -41,18 +91,6 @@ const io = new Server<ClientToServerEvents, ServerToClientEvents>(httpServer, {
     origin: config.clientOrigin,
   },
 });
-
-function cleanupRemovedMatches(roomIds: string[] = []) {
-  roomIds.forEach(roomId => {
-    matchStore.deleteMatch(roomId);
-  });
-}
-
-function cleanupEndedMatches(roomIds: string[] = []) {
-  roomIds.forEach(roomId => {
-    matchStore.deleteMatch(roomId);
-  });
-}
 
 function broadcastLobbyRooms() {
   io.emit('lobby:rooms', { rooms: store.listRooms() });
@@ -80,13 +118,6 @@ function emitMatchState(roomId: RoomId, reason: 'match_started' | 'sync' | 'comm
   if (!update) return;
   io.to(roomId).emit('match:state', update);
 }
-
-const store = new RoomStore(changes => {
-  cleanupRemovedMatches(changes.removedRoomIds);
-  cleanupEndedMatches(changes.clearedMatchRoomIds);
-  changes.updatedRoomIds.forEach(emitRoomState);
-  broadcastLobbyRooms();
-});
 
 io.on('connection', socket => {
   socket.emit('lobby:rooms', { rooms: store.listRooms() });
@@ -358,5 +389,6 @@ io.on('connection', socket => {
 });
 
 httpServer.listen(config.port, () => {
+  console.log(`[slatra-server] restored state from ${config.persistenceFilePath}`);
   console.log(`[slatra-server] listening on http://localhost:${config.port}`);
 });

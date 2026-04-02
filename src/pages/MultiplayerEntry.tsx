@@ -2,11 +2,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useMultiplayer } from '@/multiplayer/MultiplayerContext';
+import { v4 as uuidv4 } from 'uuid';
 
 const STORAGE_KEY = 'slatraDisplayName';
+const ID_KEY = 'slatraUserId';
 
 const MultiplayerEntry = () => {
   const navigate = useNavigate();
+  const { setUser } = useMultiplayer();
   const [displayName, setDisplayName] = useState('');
 
   useEffect(() => {
@@ -18,6 +22,12 @@ const MultiplayerEntry = () => {
     const trimmed = displayName.trim();
     if (!trimmed) return;
     localStorage.setItem(STORAGE_KEY, trimmed);
+    let id = localStorage.getItem(ID_KEY);
+    if (!id) {
+      id = uuidv4();
+      localStorage.setItem(ID_KEY, id);
+    }
+    setUser({ id, display_name: trimmed });
     navigate('/multiplayer/lobby');
   };
 

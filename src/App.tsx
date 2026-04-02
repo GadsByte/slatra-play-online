@@ -24,9 +24,15 @@ const App = () => (
           <Route path="/" element={<MainMenu />} />
           <Route path="/local" element={<Index />} />
           <Route path="/rules" element={<Rules />} />
-          <Route path="/multiplayer" element={<MultiplayerProvider><MultiplayerEntry /></MultiplayerProvider>} />
-          <Route path="/multiplayer/lobby" element={<MultiplayerProvider><MultiplayerLobby /></MultiplayerProvider>} />
-          <Route path="/multiplayer/room/:roomId" element={<MultiplayerProvider><MultiplayerRoom /></MultiplayerProvider>} />
+          <Route path="/multiplayer/*" element={
+            <MultiplayerProvider>
+              <Routes>
+                <Route path="/" element={<MultiplayerEntry />} />
+                <Route path="/lobby" element={<MultiplayerLobby />} />
+                <Route path="/room/:roomId" element={<MultiplayerRoom />} />
+              </Routes>
+            </MultiplayerProvider>
+          } />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

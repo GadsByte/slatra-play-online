@@ -3,6 +3,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { MultiplayerProvider } from "@/multiplayer/MultiplayerContext";
 import MainMenu from "./pages/MainMenu.tsx";
 import Index from "./pages/Index.tsx";
 import Rules from "./pages/Rules.tsx";
@@ -23,9 +24,9 @@ const App = () => (
           <Route path="/" element={<MainMenu />} />
           <Route path="/local" element={<Index />} />
           <Route path="/rules" element={<Rules />} />
-          <Route path="/multiplayer" element={<MultiplayerEntry />} />
-          <Route path="/multiplayer/lobby" element={<MultiplayerLobby />} />
-          <Route path="/multiplayer/room/:roomId" element={<MultiplayerRoom />} />
+          <Route path="/multiplayer" element={<MultiplayerProvider><MultiplayerEntry /></MultiplayerProvider>} />
+          <Route path="/multiplayer/lobby" element={<MultiplayerProvider><MultiplayerLobby /></MultiplayerProvider>} />
+          <Route path="/multiplayer/room/:roomId" element={<MultiplayerProvider><MultiplayerRoom /></MultiplayerProvider>} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>

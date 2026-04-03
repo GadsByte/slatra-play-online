@@ -1,13 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
+import type { Database } from './types';
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL = "https://bkmxldaoubjujthbqwap.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJrbXhsZGFvdWJqdWp0aGJxd2FwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzUyNTA4MjAsImV4cCI6MjA5MDgyNjgyMH0.LkWjKuU9uahSbn4jxzzG0FazVK0nJDl2sbfR3qgkJ6g";
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.warn('Supabase environment variables not set. Multiplayer features will not work.');
-}
-
-export const supabase = createClient(
-  SUPABASE_URL || 'http://localhost:54321',
-  SUPABASE_ANON_KEY || 'placeholder-key'
-);
+export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);

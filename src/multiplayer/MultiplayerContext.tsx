@@ -36,6 +36,33 @@ function generateRoomCode(): string {
   return code;
 }
 
+// Map DB row to our Room type
+function toRoom(row: any): Room {
+  return {
+    id: row.id,
+    name: row.name,
+    host_id: row.host_id,
+    host_name: row.host_name,
+    is_private: row.is_private,
+    room_code: row.room_code,
+    status: row.status as RoomStatus,
+    max_players: row.max_players,
+    created_at: row.created_at,
+  };
+}
+
+function toRoomPlayer(row: any): RoomPlayer {
+  return {
+    id: row.id,
+    room_id: row.room_id,
+    user_id: row.user_id,
+    display_name: row.display_name,
+    is_host: row.is_host,
+    is_ready: row.is_ready,
+    joined_at: row.joined_at,
+  };
+}
+
 export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<MultiplayerUser | null>(null);
   const [rooms, setRooms] = useState<Room[]>([]);
@@ -59,7 +86,7 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       .select('*')
       .in('status', ['waiting', 'in_game'])
       .order('created_at', { ascending: false });
-    if (!error && data) setRooms(data as Room[]);
+    if (!error && data) setRooms(data.map(toRoom));
     setRoomsLoading(false);
   }, []);
 
@@ -68,8 +95,8 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       supabase.from('rooms').select('*').eq('id', roomId).single(),
       supabase.from('room_players').select('*').eq('room_id', roomId).order('joined_at', { ascending: true }),
     ]);
-    if (roomRes.data) setCurrentRoom(roomRes.data as Room);
-    if (playersRes.data) setCurrentPlayers(playersRes.data as RoomPlayer[]);
+    if (roomRes.data) setCurrentRoom(toRoom(roomRes.data));
+    if (playersRes.data) setCurrentPlayers(playersRes.data.map(toRoomPlayer));
   }, []);
 
   const subscribeToRooms = useCallback(() => {
@@ -86,12 +113,12 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
     const channel = supabase
       .channel(`room-${roomId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'rooms', filter: `id=eq.${roomId}` }, (payload) => {
-        if (payload.eventType === 'UPDATE') setCurrentRoom(payload.new as Room);
+        if (payload.eventType === 'UPDATE') setCurrentRoom(toRoom(payload.new));
         if (payload.eventType === 'DELETE') setCurrentRoom(null);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'room_players', filter: `room_id=eq.${roomId}` }, () => {
         supabase.from('room_players').select('*').eq('room_id', roomId).order('joined_at', { ascending: true })
-          .then(({ data }) => { if (data) setCurrentPlayers(data as RoomPlayer[]); });
+          .then(({ data }) => { if (data) setCurrentPlayers(data.map(toRoomPlayer)); });
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -108,13 +135,13 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
         host_name: user.display_name,
         is_private: isPrivate,
         room_code: roomCode,
-        status: 'waiting' as RoomStatus,
+        status: 'waiting',
         max_players: 2,
       })
       .select()
       .single();
     if (error || !data) return null;
-    const room = data as Room;
+    const room = toRoom(data);
     // Auto-join as host
     await supabase.from('room_players').insert({
       room_id: room.id,
@@ -135,9 +162,7 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       is_host: false,
       is_ready: false,
     });
-    if (error) return false;
-    // Update player count isn't needed — we derive it from room_players
-    return true;
+    return !error;
   }, [user]);
 
   const joinRoomByCode = useCallback(async (code: string): Promise<Room | null> => {
@@ -148,7 +173,7 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       .eq('status', 'waiting')
       .single();
     if (error || !data) return null;
-    const room = data as Room;
+    const room = toRoom(data);
     const joined = await joinRoom(room.id);
     return joined ? room : null;
   }, [joinRoom]);
@@ -177,7 +202,7 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
     if (!user || !currentRoom || currentRoom.host_id !== user.id) return false;
     const { error } = await supabase
       .from('rooms')
-      .update({ status: 'in_game' as RoomStatus })
+      .update({ status: 'in_game' })
       .eq('id', currentRoom.id);
     return !error;
   }, [user, currentRoom]);

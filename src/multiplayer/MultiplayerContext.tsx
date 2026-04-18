@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { createInitialState } from '@/game/gameReducer';
 import type { Room, RoomPlayer, MultiplayerUser, RoomStatus } from './types';
 
 interface MultiplayerContextValue {
@@ -200,12 +201,37 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
 
   const startGame = useCallback(async (): Promise<boolean> => {
     if (!user || !currentRoom || currentRoom.host_id !== user.id) return false;
+    if (currentPlayers.length < 2) return false;
+
+    // Randomly assign factions
+    const shuffled = [...currentPlayers].sort(() => Math.random() - 0.5);
+    const plaguePlayer = shuffled[0];
+    const bonePlayer = shuffled[1];
+
+    const initialState = createInitialState();
+
+    // Create the game row (upsert in case one already exists for this room)
+    const { error: gameError } = await supabase
+      .from('games')
+      .upsert({
+        room_id: currentRoom.id,
+        state: initialState as any,
+        plague_player_id: plaguePlayer.user_id,
+        bone_player_id: bonePlayer.user_id,
+        version: 1,
+      }, { onConflict: 'room_id' });
+
+    if (gameError) {
+      console.error('Failed to create game:', gameError);
+      return false;
+    }
+
     const { error } = await supabase
       .from('rooms')
       .update({ status: 'in_game' })
       .eq('id', currentRoom.id);
     return !error;
-  }, [user, currentRoom]);
+  }, [user, currentRoom, currentPlayers]);
 
   return (
     <MultiplayerContext.Provider value={{

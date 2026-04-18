@@ -52,10 +52,17 @@ const MultiplayerRoom = () => {
     const ok = await startGame();
     if (!ok) {
       toast.error('Failed to start game');
+      return;
     }
-    // When game state sync is implemented, this will transition to the game view
-    toast('Game starting...', { description: 'Online gameplay coming soon.' });
+    // Navigation handled by status-change effect below
   };
+
+  // When room transitions to in_game, navigate everyone to the game view
+  useEffect(() => {
+    if (currentRoom?.status === 'in_game' && roomId) {
+      navigate(`/multiplayer/game/${roomId}`);
+    }
+  }, [currentRoom?.status, roomId, navigate]);
 
   const handleLeave = async () => {
     await leaveRoom();

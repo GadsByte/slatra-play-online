@@ -1,3 +1,5 @@
+import type { GameState } from '@/game/types';
+
 export type RoomStatus = 'waiting' | 'in_game' | 'finished';
 
 export interface Room {
@@ -25,4 +27,14 @@ export interface RoomPlayer {
 export interface MultiplayerUser {
   id: string;
   display_name: string;
+}
+
+export interface Game {
+  id: string;
+  room_id: string;
+  state: GameState;
+  plague_player_id: string;
+  bone_player_id: string;
+  version: number;
+  updated_at: string;
 }

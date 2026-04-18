@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      games: {
+        Row: {
+          bone_player_id: string
+          created_at: string
+          id: string
+          plague_player_id: string
+          room_id: string
+          state: Json
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          bone_player_id: string
+          created_at?: string
+          id?: string
+          plague_player_id: string
+          room_id: string
+          state: Json
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          bone_player_id?: string
+          created_at?: string
+          id?: string
+          plague_player_id?: string
+          room_id?: string
+          state?: Json
+          updated_at?: string
+          version?: number
+        }
+        Relationships: []
+      }
       room_players: {
         Row: {
           display_name: string

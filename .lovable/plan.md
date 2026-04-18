@@ -1,67 +1,87 @@
 
 
-# Prepare Multiplayer for Real Implementation with Supabase Realtime
+# Multiplayer Gameplay Implementation Plan
 
-Supabase can absolutely be self-hosted on a Linux VM — it's an open-source platform with official Docker Compose self-hosting support. For now we'll build against the Supabase client SDK, which works identically whether pointed at Supabase Cloud or a self-hosted instance.
+## Goal
+Take the existing local game (`SlatraGame.tsx` + `gameReducer.ts`) and make it playable between two remote players in a Supabase room.
 
-## What changes
+## Core architecture
 
-### 1. Define multiplayer types (`src/multiplayer/types.ts`)
-Create clean TypeScript interfaces that will drive all multiplayer state:
-- `Room` — id, name, host_id, host_name, is_private, room_code, status, created_at
-- `RoomPlayer` — id, room_id, user_id, display_name, is_host, is_ready
-- `MultiplayerUser` — id (from Supabase auth or anonymous), display_name
+**Authoritative state in the database.** One row per active game holds the entire serialized `GameState`. Both clients read it, but only the player whose turn it is dispatches actions. Each action updates the DB row, and Realtime pushes the new state to both clients.
 
-### 2. Set up Supabase tables & RLS
-Create database tables via migration:
-- **`rooms`** — stores room metadata (name, host, code, private flag, status)
-- **`room_players`** — join table linking users to rooms with ready state
-- RLS policies so players can only modify their own ready state, hosts can update/delete their rooms
+```text
+Player A click → reducer (local) → write new state to DB
+                                        ↓
+                                   Realtime
+                                        ↓
+                          Player B receives new state → re-render
+```
 
-### 3. Create a multiplayer context (`src/multiplayer/MultiplayerContext.tsx`)
-A React context + provider that:
-- Manages the current user identity (anonymous Supabase auth or display-name-based)
-- Exposes functions: `createRoom`, `joinRoom`, `leaveRoom`, `setReady`, `listRooms`
-- Subscribes to Supabase Realtime channels for live room/player updates
+This keeps the existing reducer as the single source of truth — we just add a thin sync layer around it.
 
-### 4. Rewrite Lobby page — remove all mock data
-- Remove `INITIAL_ROOMS` and `MockRoom` interface
-- Fetch rooms from Supabase on mount via the context
-- Subscribe to realtime inserts/updates/deletes on the `rooms` table
-- `handleCreateRoom` inserts into Supabase and navigates
-- `handleJoin` inserts into `room_players` and navigates
-- Room list updates live as other players create/join
+## What needs to be built
 
-### 5. Rewrite Room page — remove all mock data
-- Remove hardcoded `players` array, `isHost = true`, `roomName = 'The Blood Pit'`
-- Fetch room + players from Supabase on mount
-- Subscribe to realtime changes on `room_players` for this room
-- Ready toggle updates the player's row in Supabase
-- Player list renders from live data
-- "START GAME" checks both players are ready, updates room status
+### 1. New `games` table
+Stores the live game state for each room.
 
-### 6. Update Entry page
-- On "CONTINUE", create an anonymous Supabase session (or just store display name — auth can come later)
-- Store user identity in the multiplayer context
+| Column | Type | Notes |
+|---|---|---|
+| `id` | uuid | PK |
+| `room_id` | uuid | unique, links to `rooms` |
+| `state` | jsonb | full serialized `GameState` |
+| `plague_player_id` | text | which user controls Plague |
+| `bone_player_id` | text | which user controls Bone |
+| `version` | int | bumped on every update for optimistic concurrency |
+| `updated_at` | timestamptz | |
 
-### 7. Connect Supabase to the project
-- Use Lovable's Supabase integration to provision the project
-- The same Supabase client SDK will work when you later point it at a self-hosted instance by changing the URL and anon key
+RLS: anyone in the room can read; only the two assigned players can update (we'll keep policies permissive for now to match existing tables, tighten later with auth).
 
-## Files created/modified
+Realtime enabled on this table.
+
+### 2. Faction assignment on game start
+When the host clicks "START GAME" in `MultiplayerRoom.tsx`:
+- Randomly assign one player to Plague, one to Bone
+- Create the initial `GameState` via `createInitialState()`
+- Insert a row into `games`
+- Update room status to `in_game`
+- Both clients navigate to `/multiplayer/game/:roomId`
+
+### 3. New page: `MultiplayerGame.tsx`
+A wrapper around the existing game UI that:
+- Loads the game row for the room
+- Subscribes to Realtime updates on that row
+- Determines the local player's faction
+- Renders the existing `GameBoard`, `UnitPanel`, `ActionBar`, etc.
+- **Intercepts dispatch**: if it's the local player's turn, apply the reducer locally for instant feedback AND write the new state to the DB. If it's the opponent's turn, ignore input and just display incoming state from Realtime.
+
+### 4. Refactor `SlatraGame.tsx` to be reusable
+Currently `SlatraGame` owns the `useReducer`. We'll extract the rendering into a presentational component that accepts `state` and `dispatch` as props. The local-play page keeps a `useReducer`; the multiplayer page provides its own sync-aware dispatch.
+
+### 5. Turn enforcement
+The UI already tracks `currentPlayer`. We add: if `currentPlayer !== localFaction`, disable all click handlers (board, action bar, panels) and show a "Waiting for opponent..." indicator.
+
+### 6. Disconnect handling (basic)
+If a player leaves mid-game, mark the room as `finished` and show the other player a "Opponent disconnected — you win" screen. Detected via `room_players` row deletion.
+
+## Files
 
 | File | Action |
-|------|--------|
-| `src/multiplayer/types.ts` | Create — shared interfaces |
-| `src/multiplayer/MultiplayerContext.tsx` | Create — context + Supabase realtime logic |
-| `supabase/migrations/001_multiplayer_rooms.sql` | Create — rooms + room_players tables + RLS |
-| `src/pages/MultiplayerLobby.tsx` | Rewrite — remove mocks, use context |
-| `src/pages/MultiplayerRoom.tsx` | Rewrite — remove mocks, use context |
-| `src/pages/MultiplayerEntry.tsx` | Minor update — integrate with context |
-| `src/App.tsx` | Wrap multiplayer routes in provider |
+|---|---|
+| `supabase/migrations/<new>.sql` | Create `games` table + RLS + Realtime |
+| `src/multiplayer/types.ts` | Add `Game` interface |
+| `src/multiplayer/MultiplayerContext.tsx` | Add `startGame` logic (create game row, assign factions), add `currentGame` state + subscription helpers |
+| `src/components/game/SlatraGameView.tsx` | New — extracted presentational component (board + panels + action bar) taking `state`, `dispatch`, and optional `localFaction` |
+| `src/pages/Index.tsx` (local play) | Use `SlatraGameView` with local `useReducer` |
+| `src/pages/MultiplayerGame.tsx` | New — loads game row, subscribes, wraps `SlatraGameView` with sync dispatch |
+| `src/pages/MultiplayerRoom.tsx` | Update "START GAME" to create game row + navigate |
+| `src/App.tsx` | Add `/multiplayer/game/:roomId` route |
 
-## What stays the same
-- Local game (`/local`) — completely untouched
-- Main menu, Rules page, "More Slatra" link — unchanged
-- All visual styling and theme — preserved exactly
+## Out of scope for this pass
+- Replay / spectator mode
+- Reconnect after browser refresh mid-game (state will load fine, but no formal "rejoin" flow)
+- Server-side action validation (clients are trusted for now — fine for friendly play, not for ranked)
+- Chat
+- Authenticated accounts and tightened RLS
+
+## Open question
 

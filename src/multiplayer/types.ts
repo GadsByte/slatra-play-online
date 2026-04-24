@@ -12,6 +12,7 @@ export interface Room {
   status: RoomStatus;
   max_players: number;
   created_at: string;
+  expires_at: string;
 }
 
 export interface RoomPlayer {

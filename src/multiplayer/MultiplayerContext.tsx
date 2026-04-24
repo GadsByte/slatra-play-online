@@ -224,16 +224,14 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
 
     const initialState = createInitialState();
 
-    // Create the game row (upsert in case one already exists for this room)
-    const { error: gameError } = await supabase
-      .from('games')
-      .upsert({
-        room_id: currentRoom.id,
-        state: initialState as any,
-        plague_player_id: plaguePlayer.user_id,
-        bone_player_id: bonePlayer.user_id,
-        version: 1,
-      }, { onConflict: 'room_id' });
+    // Create the game row through a protected backend function so RLS can verify room membership.
+    const { error: gameError } = await supabase.rpc('create_multiplayer_game' as any, {
+      _room_id: currentRoom.id,
+      _state: initialState as any,
+      _plague_player_id: plaguePlayer.user_id,
+      _bone_player_id: bonePlayer.user_id,
+      _user_id: user.id,
+    });
 
     if (gameError) {
       console.error('Failed to create game:', gameError);

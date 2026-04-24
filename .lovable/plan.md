@@ -1,87 +1,76 @@
-
-
-# Multiplayer Gameplay Implementation Plan
+# Plan: Fix multiplayer game write security
 
 ## Goal
-Take the existing local game (`SlatraGame.tsx` + `gameReducer.ts`) and make it playable between two remote players in a Supabase room.
+Resolve the security finding: **Any anonymous user can modify or delete any game**.
 
-## Core architecture
+The multiplayer system currently uses localStorage-generated player IDs instead of authenticated accounts, so the safest fix for this pass is to scope game writes to verified room participants using the existing room/player records and the browser-provided player ID.
 
-**Authoritative state in the database.** One row per active game holds the entire serialized `GameState`. Both clients read it, but only the player whose turn it is dispatches actions. Each action updates the DB row, and Realtime pushes the new state to both clients.
+## What will change
 
-```text
-Player A click → reducer (local) → write new state to DB
-                                        ↓
-                                   Realtime
-                                        ↓
-                          Player B receives new state → re-render
+1. **Replace permissive `games` write policies**
+   - Drop the current policies that allow anyone to insert, update, or delete any game.
+   - Keep public read access for now so room participants can load game state without a login flow.
+   - Add stricter policies:
+     - `INSERT`: only allowed when both assigned players are present in the matching room.
+     - `UPDATE`: only allowed when the writer is one of the two assigned players and is still in that room.
+     - `DELETE`: only allowed by a participant in that game room, or through backend cleanup/room cascade.
+
+2. **Pass the local player ID into database writes safely**
+   - Because the current multiplayer identity is stored in localStorage, database policies need a way to compare the request to that player ID.
+   - Add a small helper around game mutations to send the current `user.id` as a request setting/header that RLS can validate.
+   - Use that only for game creation, game updates, and leave/delete paths that touch game-related data.
+
+3. **Add database helper functions for RLS**
+   - Add `SECURITY DEFINER` functions that safely check:
+     - whether a supplied player ID is in a room,
+     - whether a supplied player ID is assigned to a game,
+     - whether the game belongs to an active room.
+   - These avoid recursive RLS issues and keep policies readable.
+
+4. **Preserve room expiry cleanup**
+   - Ensure the existing 60-minute expiry cleanup can still delete rooms and cascade-delete games.
+   - Verify the cleanup function still works with the new policies.
+
+5. **Verify the finding**
+   - Run the security/linter checks after applying the migration.
+   - Confirm the `games_unrestricted_write` finding is cleared or downgraded.
+   - Build the app to confirm the multiplayer game code still compiles.
+
+## Technical details
+
+Current issue:
+
+```sql
+CREATE POLICY "Anyone can update games"
+ON public.games
+FOR UPDATE
+USING (true);
+
+CREATE POLICY "Anyone can delete games"
+ON public.games
+FOR DELETE
+USING (true);
 ```
 
-This keeps the existing reducer as the single source of truth — we just add a thin sync layer around it.
+Proposed direction:
 
-## What needs to be built
+```sql
+-- Conceptual policy shape
+CREATE POLICY "Room participants can update games"
+ON public.games
+FOR UPDATE
+USING (
+  public.is_game_participant(id, current_setting('request.headers', true))
+)
+WITH CHECK (
+  public.is_game_participant(id, current_setting('request.headers', true))
+);
+```
 
-### 1. New `games` table
-Stores the live game state for each room.
+The exact implementation will be adapted to the request/header support available in the app client and database runtime.
 
-| Column | Type | Notes |
-|---|---|---|
-| `id` | uuid | PK |
-| `room_id` | uuid | unique, links to `rooms` |
-| `state` | jsonb | full serialized `GameState` |
-| `plague_player_id` | text | which user controls Plague |
-| `bone_player_id` | text | which user controls Bone |
-| `version` | int | bumped on every update for optimistic concurrency |
-| `updated_at` | timestamptz | |
+## Important limitation
 
-RLS: anyone in the room can read; only the two assigned players can update (we'll keep policies permissive for now to match existing tables, tighten later with auth).
+This fixes the immediate unrestricted-write issue for the current localStorage-based multiplayer system, but it is not as strong as full account-based authentication. A determined attacker could still impersonate a local player ID if they obtain or guess it.
 
-Realtime enabled on this table.
-
-### 2. Faction assignment on game start
-When the host clicks "START GAME" in `MultiplayerRoom.tsx`:
-- Randomly assign one player to Plague, one to Bone
-- Create the initial `GameState` via `createInitialState()`
-- Insert a row into `games`
-- Update room status to `in_game`
-- Both clients navigate to `/multiplayer/game/:roomId`
-
-### 3. New page: `MultiplayerGame.tsx`
-A wrapper around the existing game UI that:
-- Loads the game row for the room
-- Subscribes to Realtime updates on that row
-- Determines the local player's faction
-- Renders the existing `GameBoard`, `UnitPanel`, `ActionBar`, etc.
-- **Intercepts dispatch**: if it's the local player's turn, apply the reducer locally for instant feedback AND write the new state to the DB. If it's the opponent's turn, ignore input and just display incoming state from Realtime.
-
-### 4. Refactor `SlatraGame.tsx` to be reusable
-Currently `SlatraGame` owns the `useReducer`. We'll extract the rendering into a presentational component that accepts `state` and `dispatch` as props. The local-play page keeps a `useReducer`; the multiplayer page provides its own sync-aware dispatch.
-
-### 5. Turn enforcement
-The UI already tracks `currentPlayer`. We add: if `currentPlayer !== localFaction`, disable all click handlers (board, action bar, panels) and show a "Waiting for opponent..." indicator.
-
-### 6. Disconnect handling (basic)
-If a player leaves mid-game, mark the room as `finished` and show the other player a "Opponent disconnected — you win" screen. Detected via `room_players` row deletion.
-
-## Files
-
-| File | Action |
-|---|---|
-| `supabase/migrations/<new>.sql` | Create `games` table + RLS + Realtime |
-| `src/multiplayer/types.ts` | Add `Game` interface |
-| `src/multiplayer/MultiplayerContext.tsx` | Add `startGame` logic (create game row, assign factions), add `currentGame` state + subscription helpers |
-| `src/components/game/SlatraGameView.tsx` | New — extracted presentational component (board + panels + action bar) taking `state`, `dispatch`, and optional `localFaction` |
-| `src/pages/Index.tsx` (local play) | Use `SlatraGameView` with local `useReducer` |
-| `src/pages/MultiplayerGame.tsx` | New — loads game row, subscribes, wraps `SlatraGameView` with sync dispatch |
-| `src/pages/MultiplayerRoom.tsx` | Update "START GAME" to create game row + navigate |
-| `src/App.tsx` | Add `/multiplayer/game/:roomId` route |
-
-## Out of scope for this pass
-- Replay / spectator mode
-- Reconnect after browser refresh mid-game (state will load fine, but no formal "rejoin" flow)
-- Server-side action validation (clients are trusted for now — fine for friendly play, not for ranked)
-- Chat
-- Authenticated accounts and tightened RLS
-
-## Open question
-
+A stronger future hardening pass would add Lovable Cloud authentication and store player identity using authenticated user IDs, then restrict RLS with `auth.uid()`.

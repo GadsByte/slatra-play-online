@@ -12,6 +12,14 @@ import { toast } from 'sonner';
 
 const STORAGE_KEY = 'slatraDisplayName';
 
+function getTimeRemainingLabel(expiresAt: string): string {
+  const remainingMs = new Date(expiresAt).getTime() - Date.now();
+  if (remainingMs <= 0) return 'Expiring now';
+  const minutes = Math.ceil(remainingMs / 60000);
+  if (minutes >= 60) return 'Expires in 60m';
+  return `Expires in ${minutes}m`;
+}
+
 const MultiplayerLobby = () => {
   const navigate = useNavigate();
   const {
@@ -27,6 +35,7 @@ const MultiplayerLobby = () => {
   const [newRoomPrivate, setNewRoomPrivate] = useState(false);
   const [joinPrivateOpen, setJoinPrivateOpen] = useState(false);
   const [privateCode, setPrivateCode] = useState('');
+  const [, setTimerTick] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -38,6 +47,11 @@ const MultiplayerLobby = () => {
     const unsub = subscribeToRooms();
     return unsub;
   }, [user, navigate, fetchRooms, subscribeToRooms]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTimerTick(tick => tick + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSaveName = () => {
     const trimmed = nameInput.trim();
@@ -188,6 +202,7 @@ const MultiplayerLobby = () => {
                 </div>
                 <div className="flex items-center gap-3 text-xs font-body text-muted-foreground">
                   <span>Host: {room.host_name}</span>
+                  <span>{getTimeRemainingLabel(room.expires_at)}</span>
                   <Badge
                     variant={room.status === 'waiting' ? 'default' : 'secondary'}
                     className={`text-xs font-display ${room.status === 'waiting' ? 'bg-primary/20 text-primary border-primary/30' : 'bg-muted text-muted-foreground'}`}

@@ -17,6 +17,7 @@ const MultiplayerRoom = () => {
   } = useMultiplayer();
 
   const [localReady, setLocalReady] = useState(false);
+  const [hasLoadedRoom, setHasLoadedRoom] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -24,18 +25,27 @@ const MultiplayerRoom = () => {
       return;
     }
     if (!roomId) return;
-    fetchRoom(roomId);
+    let cancelled = false;
+    setHasLoadedRoom(false);
+    fetchRoom(roomId).finally(() => {
+      if (!cancelled) setHasLoadedRoom(true);
+    });
     const unsub = subscribeToRoom(roomId);
     const expiryCheck = window.setInterval(() => fetchRoom(roomId), 30000);
     const expiryTimeout = window.setTimeout(() => fetchRoom(roomId), 60 * 60 * 1000);
-    return unsub;
+    return () => {
+      cancelled = true;
+      window.clearInterval(expiryCheck);
+      window.clearTimeout(expiryTimeout);
+      unsub();
+    };
   }, [user, roomId, navigate, fetchRoom, subscribeToRoom]);
 
   useEffect(() => {
-    if (!roomId || currentRoom) return;
+    if (!roomId || !hasLoadedRoom || currentRoom) return;
     toast.info('Room expired');
     navigate('/multiplayer/lobby');
-  }, [currentRoom, roomId, navigate]);
+  }, [currentRoom, hasLoadedRoom, roomId, navigate]);
 
   // Sync local ready state from server
   useEffect(() => {

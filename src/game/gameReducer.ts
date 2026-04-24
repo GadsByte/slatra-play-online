@@ -24,7 +24,7 @@ export type GameAction =
 
 export function createInitialState(): GameState {
   return {
-    phase: 'hazard_placement',
+    phase: 'objective_roll',
     subPhase: 'select_unit',
     round: 0,
     currentPlayer: 'plague',
@@ -38,7 +38,7 @@ export function createInitialState(): GameState {
     diceResult: null,
     log: [],
     winner: null,
-    hazardsToPlace: 4,
+    hazardsToPlace: 0,
     selectedDeployClass: null,
     bannerActive: false,
     auraActive: false,
@@ -205,9 +205,10 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
     case 'START_GAME':
       return {
         ...createInitialState(),
-        phase: 'hazard_placement',
-        hazardsToPlace: 4,
-        log: ['Welcome to SLATRA. Place 4 hazard tiles in rows 3-6.'],
+        phase: 'objective_roll',
+        currentPlayer: 'plague',
+        hazardsToPlace: 0,
+        log: ['Welcome to SLATRA. Plague Order rolls for objectives.'],
       };
 
     case 'PLACE_HAZARD': {
@@ -215,6 +216,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       const { position } = action;
       if (position.row < 3 || position.row > 6) return state;
       if (state.hazards.some(h => posEqual(h.position, position))) return state;
+      if (state.objectives.some(o => posEqual(o.position, position))) return state;
 
       const newHazards = [...state.hazards, { position }];
       const remaining = state.hazardsToPlace - 1;
@@ -227,8 +229,13 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       newState = addLog(newState, `Hazard placed at ${position.row}${['A','B','C','D','E','F'][position.col]}`);
 
       if (remaining <= 0) {
-        newState = { ...newState, phase: 'objective_roll' };
-        newState = addLog(newState, 'Hazards placed. Rolling for objectives...');
+        if (state.currentPlayer === 'plague') {
+          newState = { ...newState, phase: 'deployment_p2', currentPlayer: 'bone', hazardsToPlace: 0 };
+          newState = addLog(newState, 'Plague hazards placed. Bone Legion: Deploy your 6 units in rows 7-8.');
+        } else {
+          newState = { ...newState, phase: 'initiative_roll', currentPlayer: 'bone', hazardsToPlace: 0 };
+          newState = addLog(newState, 'Bone hazards placed. Bone Legion rolls for initiative.');
+        }
       }
       return newState;
     }
@@ -252,6 +259,7 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       let newState: GameState = {
         ...state,
         phase: 'deployment_p1',
+        currentPlayer: 'plague',
         objectives: [
           { position: { row: 4, col: col1 }, faction: 'bone', type: 'bone_altar', used: false },
           { position: { row: 5, col: col2 }, faction: 'plague', type: 'plague_crate', used: false },
@@ -295,11 +303,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // Check if deployment done
       if (newState.units.filter(u => u.faction === faction).length >= 6) {
         if (faction === 'plague') {
-          newState = { ...newState, phase: 'deployment_p2', selectedDeployClass: null };
-          newState = addLog(newState, 'Bone Legion: Deploy your 6 units in rows 7-8.');
+          newState = { ...newState, phase: 'hazard_placement', currentPlayer: 'plague', hazardsToPlace: 2, selectedDeployClass: null };
+          newState = addLog(newState, 'Plague Order: Place 2 hazard tiles in rows 3-6.');
         } else {
-          newState = { ...newState, phase: 'initiative_roll', selectedDeployClass: null };
-          newState = addLog(newState, 'All units deployed. Roll for initiative!');
+          newState = { ...newState, phase: 'hazard_placement', currentPlayer: 'bone', hazardsToPlace: 2, selectedDeployClass: null };
+          newState = addLog(newState, 'Bone Legion: Place 2 hazard tiles in rows 3-6.');
         }
       }
       return newState;

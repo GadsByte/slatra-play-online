@@ -45,7 +45,15 @@ export type Database = {
           updated_at?: string
           version?: number
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "games_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: true
+            referencedRelation: "rooms"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       room_players: {
         Row: {
@@ -88,6 +96,7 @@ export type Database = {
       rooms: {
         Row: {
           created_at: string
+          expires_at: string
           host_id: string
           host_name: string
           id: string
@@ -99,6 +108,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string
+          expires_at?: string
           host_id: string
           host_name: string
           id?: string
@@ -110,6 +120,7 @@ export type Database = {
         }
         Update: {
           created_at?: string
+          expires_at?: string
           host_id?: string
           host_name?: string
           id?: string
@@ -126,7 +137,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      delete_expired_multiplayer_rooms: { Args: never; Returns: undefined }
     }
     Enums: {
       [_ in never]: never

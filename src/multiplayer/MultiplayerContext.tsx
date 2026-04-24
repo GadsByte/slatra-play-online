@@ -106,6 +106,11 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       supabase.from('room_players').select('*').eq('room_id', roomId).order('joined_at', { ascending: true }),
     ]);
     if (roomRes.data) setCurrentRoom(toRoom(roomRes.data));
+    if (roomRes.error) {
+      setCurrentRoom(null);
+      setCurrentPlayers([]);
+      return;
+    }
     if (playersRes.data) setCurrentPlayers(playersRes.data.map(toRoomPlayer));
   }, [cleanupExpiredRooms]);
 

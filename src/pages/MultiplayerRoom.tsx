@@ -26,8 +26,16 @@ const MultiplayerRoom = () => {
     if (!roomId) return;
     fetchRoom(roomId);
     const unsub = subscribeToRoom(roomId);
+    const expiryCheck = window.setInterval(() => fetchRoom(roomId), 30000);
+    const expiryTimeout = window.setTimeout(() => fetchRoom(roomId), 60 * 60 * 1000);
     return unsub;
   }, [user, roomId, navigate, fetchRoom, subscribeToRoom]);
+
+  useEffect(() => {
+    if (!roomId || currentRoom) return;
+    toast.info('Room expired');
+    navigate('/multiplayer/lobby');
+  }, [currentRoom, roomId, navigate]);
 
   // Sync local ready state from server
   useEffect(() => {

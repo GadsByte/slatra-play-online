@@ -303,11 +303,11 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       // Check if deployment done
       if (newState.units.filter(u => u.faction === faction).length >= 6) {
         if (faction === 'plague') {
-          newState = { ...newState, phase: 'deployment_p2', selectedDeployClass: null };
-          newState = addLog(newState, 'Bone Legion: Deploy your 6 units in rows 7-8.');
+          newState = { ...newState, phase: 'hazard_placement', currentPlayer: 'plague', hazardsToPlace: 2, selectedDeployClass: null };
+          newState = addLog(newState, 'Plague Order: Place 2 hazard tiles in rows 3-6.');
         } else {
-          newState = { ...newState, phase: 'initiative_roll', selectedDeployClass: null };
-          newState = addLog(newState, 'All units deployed. Roll for initiative!');
+          newState = { ...newState, phase: 'hazard_placement', currentPlayer: 'bone', hazardsToPlace: 2, selectedDeployClass: null };
+          newState = addLog(newState, 'Bone Legion: Place 2 hazard tiles in rows 3-6.');
         }
       }
       return newState;

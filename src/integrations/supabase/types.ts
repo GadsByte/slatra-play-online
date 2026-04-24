@@ -156,6 +156,31 @@ export type Database = {
         }
         Returns: boolean
       }
+      create_multiplayer_game: {
+        Args: {
+          _bone_player_id: string
+          _plague_player_id: string
+          _room_id: string
+          _state: Json
+          _user_id: string
+        }
+        Returns: {
+          bone_player_id: string
+          created_at: string
+          id: string
+          plague_player_id: string
+          room_id: string
+          state: Json
+          updated_at: string
+          version: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "games"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       current_multiplayer_user_id: { Args: never; Returns: string }
       delete_expired_multiplayer_rooms: { Args: never; Returns: undefined }
       is_room_host: {
@@ -165,6 +190,30 @@ export type Database = {
       is_room_player: {
         Args: { _room_id: string; _user_id: string }
         Returns: boolean
+      }
+      update_multiplayer_game: {
+        Args: {
+          _game_id: string
+          _state: Json
+          _user_id: string
+          _version: number
+        }
+        Returns: {
+          bone_player_id: string
+          created_at: string
+          id: string
+          plague_player_id: string
+          room_id: string
+          state: Json
+          updated_at: string
+          version: number
+        }
+        SetofOptions: {
+          from: "*"
+          to: "games"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
     }
     Enums: {

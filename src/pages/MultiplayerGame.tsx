@@ -25,7 +25,7 @@ function toGame(row: any): Game {
 const MultiplayerGame = () => {
   const navigate = useNavigate();
   const { roomId } = useParams<{ roomId: string }>();
-  const { user } = useMultiplayer();
+  const { user, cleanupExpiredRooms } = useMultiplayer();
 
   const [game, setGame] = useState<Game | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,6 +42,7 @@ const MultiplayerGame = () => {
     if (!roomId || !user) return;
     let cancelled = false;
     (async () => {
+      await cleanupExpiredRooms();
       const { data, error } = await supabase
         .from('games')
         .select('*')
@@ -59,7 +60,7 @@ const MultiplayerGame = () => {
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [roomId, user, navigate]);
+  }, [roomId, user, navigate, cleanupExpiredRooms]);
 
   // Subscribe to game updates
   useEffect(() => {
@@ -91,6 +92,24 @@ const MultiplayerGame = () => {
       .subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [roomId, user]);
+
+  useEffect(() => {
+    if (!roomId) return;
+    const checkExpiry = async () => {
+      await cleanupExpiredRooms();
+      const { data } = await supabase.from('rooms').select('id').eq('id', roomId).maybeSingle();
+      if (!data) {
+        toast.info('Room expired');
+        navigate('/multiplayer/lobby');
+      }
+    };
+    const expiryCheck = window.setInterval(checkExpiry, 30000);
+    const expiryTimeout = window.setTimeout(checkExpiry, 60 * 60 * 1000);
+    return () => {
+      window.clearInterval(expiryCheck);
+      window.clearTimeout(expiryTimeout);
+    };
+  }, [roomId, navigate, cleanupExpiredRooms]);
 
   // Sync-aware dispatch
   const syncDispatch = useCallback((action: GameAction) => {

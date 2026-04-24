@@ -20,6 +20,7 @@ interface MultiplayerContextValue {
   subscribeToRoom: (roomId: string) => () => void;
   fetchRooms: () => Promise<void>;
   fetchRoom: (roomId: string) => Promise<void>;
+  cleanupExpiredRooms: () => Promise<void>;
 }
 
 const MultiplayerContext = createContext<MultiplayerContextValue | null>(null);
@@ -49,6 +50,7 @@ function toRoom(row: any): Room {
     status: row.status as RoomStatus,
     max_players: row.max_players,
     created_at: row.created_at,
+    expires_at: row.expires_at,
   };
 }
 
@@ -71,6 +73,10 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
   const [currentRoom, setCurrentRoom] = useState<Room | null>(null);
   const [currentPlayers, setCurrentPlayers] = useState<RoomPlayer[]>([]);
 
+  const cleanupExpiredRooms = useCallback(async () => {
+    await supabase.rpc('delete_expired_multiplayer_rooms' as any);
+  }, []);
+
   // Initialize user from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('slatraDisplayName');
@@ -82,23 +88,31 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
 
   const fetchRooms = useCallback(async () => {
     setRoomsLoading(true);
+    await cleanupExpiredRooms();
     const { data, error } = await supabase
       .from('rooms')
       .select('*')
       .in('status', ['waiting', 'in_game'])
+      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false });
     if (!error && data) setRooms(data.map(toRoom));
     setRoomsLoading(false);
-  }, []);
+  }, [cleanupExpiredRooms]);
 
   const fetchRoom = useCallback(async (roomId: string) => {
+    await cleanupExpiredRooms();
     const [roomRes, playersRes] = await Promise.all([
       supabase.from('rooms').select('*').eq('id', roomId).single(),
       supabase.from('room_players').select('*').eq('room_id', roomId).order('joined_at', { ascending: true }),
     ]);
     if (roomRes.data) setCurrentRoom(toRoom(roomRes.data));
+    if (roomRes.error) {
+      setCurrentRoom(null);
+      setCurrentPlayers([]);
+      return;
+    }
     if (playersRes.data) setCurrentPlayers(playersRes.data.map(toRoomPlayer));
-  }, []);
+  }, [cleanupExpiredRooms]);
 
   const subscribeToRooms = useCallback(() => {
     const channel = supabase
@@ -238,7 +252,7 @@ export const MultiplayerProvider = ({ children }: { children: ReactNode }) => {
       user, setUser, rooms, roomsLoading,
       currentRoom, currentPlayers,
       createRoom, joinRoom, joinRoomByCode, leaveRoom, setReady, startGame,
-      subscribeToRooms, subscribeToRoom, fetchRooms, fetchRoom,
+      subscribeToRooms, subscribeToRoom, fetchRooms, fetchRoom, cleanupExpiredRooms,
     }}>
       {children}
     </MultiplayerContext.Provider>

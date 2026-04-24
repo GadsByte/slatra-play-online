@@ -1,76 +1,75 @@
-# Plan: Fix multiplayer game write security
+
+# Multiplayer Setup: Alternating Hazards & Per-Player Deployment
 
 ## Goal
-Resolve the security finding: **Any anonymous user can modify or delete any game**.
+Restructure the match setup so each player is responsible for their own units and half the hazards, instead of one player ("plague") doing everything.
 
-The multiplayer system currently uses localStorage-generated player IDs instead of authenticated accounts, so the safest fix for this pass is to scope game writes to verified room participants using the existing room/player records and the browser-provided player ID.
+## New setup flow
 
-## What will change
+After the room starts, the game runs through this sequence:
 
-1. **Replace permissive `games` write policies**
-   - Drop the current policies that allow anyone to insert, update, or delete any game.
-   - Keep public read access for now so room participants can load game state without a login flow.
-   - Add stricter policies:
-     - `INSERT`: only allowed when both assigned players are present in the matching room.
-     - `UPDATE`: only allowed when the writer is one of the two assigned players and is still in that room.
-     - `DELETE`: only allowed by a participant in that game room, or through backend cleanup/room cascade.
-
-2. **Pass the local player ID into database writes safely**
-   - Because the current multiplayer identity is stored in localStorage, database policies need a way to compare the request to that player ID.
-   - Add a small helper around game mutations to send the current `user.id` as a request setting/header that RLS can validate.
-   - Use that only for game creation, game updates, and leave/delete paths that touch game-related data.
-
-3. **Add database helper functions for RLS**
-   - Add `SECURITY DEFINER` functions that safely check:
-     - whether a supplied player ID is in a room,
-     - whether a supplied player ID is assigned to a game,
-     - whether the game belongs to an active room.
-   - These avoid recursive RLS issues and keep policies readable.
-
-4. **Preserve room expiry cleanup**
-   - Ensure the existing 60-minute expiry cleanup can still delete rooms and cascade-delete games.
-   - Verify the cleanup function still works with the new policies.
-
-5. **Verify the finding**
-   - Run the security/linter checks after applying the migration.
-   - Confirm the `games_unrestricted_write` finding is cleared or downgraded.
-   - Build the app to confirm the multiplayer game code still compiles.
-
-## Technical details
-
-Current issue:
-
-```sql
-CREATE POLICY "Anyone can update games"
-ON public.games
-FOR UPDATE
-USING (true);
-
-CREATE POLICY "Anyone can delete games"
-ON public.games
-FOR DELETE
-USING (true);
+```text
+1. objective_roll           (auto / either player can roll — board state only)
+2. plague deploys 6 units   (rows 1-2)
+3. plague places 2 hazards  (rows 3-6)
+4. bone deploys 6 units     (rows 7-8)
+5. bone places 2 hazards    (rows 3-6)
+6. initiative_roll          (either player)
+7. playing                  (existing turn-by-turn flow)
 ```
 
-Proposed direction:
+Why this order: each player commits their army before seeing the opponent's, then drops their hazards knowing where their own units sit but before the opponent's are placed (still an information asymmetry, but a fair and symmetric one). Total hazards on the board = 4, same as today. This avoids two boring "wait for opponent" gaps in a row.
 
-```sql
--- Conceptual policy shape
-CREATE POLICY "Room participants can update games"
-ON public.games
-FOR UPDATE
-USING (
-  public.is_game_participant(id, current_setting('request.headers', true))
-)
-WITH CHECK (
-  public.is_game_participant(id, current_setting('request.headers', true))
-);
-```
+Local (single-screen) play keeps the same total flow, just reordered — still feels natural with one device.
 
-The exact implementation will be adapted to the request/header support available in the app client and database runtime.
+## Gameplay changes (`src/game/types.ts` + `src/game/gameReducer.ts`)
 
-## Important limitation
+- Add `currentPlayer: Faction` semantics to setup phases. The reducer already tracks `currentPlayer`; we will set it explicitly during setup so the multiplayer turn gate works.
+- Replace `hazardsToPlace: number` with `hazardsToPlace: number` plus the active faction implied by `currentPlayer`. Each hazard-placement turn places exactly 2.
+- Rework phase transitions in the reducer:
+  - `objective_roll` → `deployment_p1` (plague), `currentPlayer = 'plague'`
+  - `deployment_p1` (after 6 plague units) → `hazard_placement` with `currentPlayer = 'plague'`, `hazardsToPlace = 2`
+  - `hazard_placement` (plague's 2 placed) → `deployment_p2`, `currentPlayer = 'bone'`
+  - `deployment_p2` (after 6 bone units) → `hazard_placement` with `currentPlayer = 'bone'`, `hazardsToPlace = 2`
+  - `hazard_placement` (bone's 2 placed) → `initiative_roll`
+- `PLACE_HAZARD` keeps row 3-6 validation; on completion of a player's 2 hazards, advance to next phase based on which faction just finished.
+- `DEPLOY_UNIT` already keys off `state.phase`; no change needed beyond the new transition target after `deployment_p1`.
+- Update setup log messages to reflect the new sequence.
 
-This fixes the immediate unrestricted-write issue for the current localStorage-based multiplayer system, but it is not as strong as full account-based authentication. A determined attacker could still impersonate a local player ID if they obtain or guess it.
+## Multiplayer turn gating (`src/components/game/SlatraGameView.tsx`)
 
-A stronger future hardening pass would add Lovable Cloud authentication and store player identity using authenticated user IDs, then restrict RLS with `auth.uid()`.
+`SlatraGameView` currently computes `isMyTurn = localFaction === undefined || state.currentPlayer === localFaction`. With `currentPlayer` set correctly during setup, this already works for hazards and deployment. Two small fixes:
+
+- `objective_roll` and `initiative_roll`: these are board-state events that either player can trigger. Allow either side to dispatch the roll button (treat as host-or-anyone). Simplest: any player whose turn flag is `currentPlayer` may roll; we will set `currentPlayer = 'plague'` for `objective_roll` (host rolls) and to whoever has initiative-roll responsibility — keep it simple: `objective_roll` = plague rolls, `initiative_roll` = bone rolls. This guarantees both players are involved.
+- The deployment unit-class buttons and hazard banner already render based on `interactive`; no change needed beyond the gating logic above.
+
+## Multiplayer dispatch (`src/pages/MultiplayerGame.tsx`)
+
+The current `syncDispatch` blocks dispatch unless `state.currentPlayer === localFaction`. With the reducer setting `currentPlayer` correctly for every setup phase, this gate already does the right thing — no logic change needed.
+
+The status banner copy should be slightly improved to read clearly during setup ("WAITING FOR OPPONENT TO DEPLOY", "WAITING FOR OPPONENT TO PLACE HAZARDS"). Small UI polish in the banner.
+
+## Status banner copy (`src/pages/MultiplayerGame.tsx`)
+
+Replace the generic "YOUR TURN / WAITING FOR OPPONENT" with phase-aware text:
+- `objective_roll` (plague): "ROLL FOR OBJECTIVES" / "WAITING FOR OBJECTIVE ROLL"
+- `deployment_p1`/`deployment_p2`: "DEPLOY YOUR UNITS" / "OPPONENT IS DEPLOYING"
+- `hazard_placement`: "PLACE 2 HAZARDS" / "OPPONENT IS PLACING HAZARDS"
+- `initiative_roll`: "ROLL FOR INITIATIVE" / "WAITING FOR INITIATIVE ROLL"
+- `playing`: existing "YOUR TURN" / "WAITING FOR OPPONENT..."
+
+## Files to change
+
+| File | Change |
+|------|--------|
+| `src/game/types.ts` | (no shape change expected; existing fields suffice) |
+| `src/game/gameReducer.ts` | Reorder setup phase transitions, set `currentPlayer` during setup, split hazard placement into 2+2, update logs |
+| `src/components/game/SlatraGameView.tsx` | (no change — gating already works once reducer sets `currentPlayer`) |
+| `src/pages/MultiplayerGame.tsx` | Phase-aware status banner copy |
+
+No database changes. Backwards-incompatible for any in-flight games (they would be mid-setup with the old phase order) — acceptable since rooms expire after 60 minutes.
+
+## Out of scope
+- Reordering for local single-device play UX (it just runs through the same new sequence; both players share the screen)
+- Showing the opponent's deployments live during their turn (they will appear on the board as they happen via existing realtime sync — no extra work)
+- Bans/draft/snake order for hazards

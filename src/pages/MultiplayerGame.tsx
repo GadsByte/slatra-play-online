@@ -193,6 +193,20 @@ const MultiplayerGame = () => {
   const isMyTurn = game.state.currentPlayer === localFaction;
   const factionLabel = localFaction === 'plague' ? 'PLAGUE ORDER' : 'BONE LEGION';
   const factionColor = localFaction === 'plague' ? 'text-plague-light' : 'text-bone-light';
+  const turnText = (() => {
+    if (isMyTurn) {
+      if (game.state.phase === 'objective_roll') return 'ROLL FOR OBJECTIVES';
+      if (game.state.phase === 'deployment_p1' || game.state.phase === 'deployment_p2') return 'DEPLOY YOUR UNITS';
+      if (game.state.phase === 'hazard_placement') return 'PLACE 2 HAZARDS';
+      if (game.state.phase === 'initiative_roll') return 'ROLL FOR INITIATIVE';
+      return 'YOUR TURN';
+    }
+    if (game.state.phase === 'objective_roll') return 'WAITING FOR OBJECTIVE ROLL';
+    if (game.state.phase === 'deployment_p1' || game.state.phase === 'deployment_p2') return 'OPPONENT IS DEPLOYING';
+    if (game.state.phase === 'hazard_placement') return 'OPPONENT IS PLACING HAZARDS';
+    if (game.state.phase === 'initiative_roll') return 'WAITING FOR INITIATIVE ROLL';
+    return 'WAITING FOR OPPONENT...';
+  })();
 
   const banner = (
     <div className="bg-card/50 border-b border-border px-4 py-2 flex items-center justify-between text-sm">
@@ -202,9 +216,9 @@ const MultiplayerGame = () => {
       </div>
       <div className="font-display tracking-wider">
         {isMyTurn ? (
-          <span className="text-primary">YOUR TURN</span>
+          <span className="text-primary">{turnText}</span>
         ) : (
-          <span className="text-muted-foreground animate-pulse">WAITING FOR OPPONENT...</span>
+          <span className="text-muted-foreground animate-pulse">{turnText}</span>
         )}
       </div>
       <Button variant="ghost" size="sm" onClick={handleLeave} className="font-display tracking-wider text-muted-foreground hover:text-foreground">

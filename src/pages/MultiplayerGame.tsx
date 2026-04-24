@@ -124,15 +124,24 @@ const MultiplayerGame = () => {
     versionRef.current = newVersion;
     setGame({ ...game, state: newState, version: newVersion });
 
-    // Persist
+    // Persist through a protected backend function so only assigned room players can update state.
     supabase
-      .from('games')
-      .update({ state: newState as any, version: newVersion, updated_at: new Date().toISOString() })
-      .eq('id', game.id)
-      .then(({ error }) => {
+      .rpc('update_multiplayer_game' as any, {
+        _game_id: game.id,
+        _state: newState as any,
+        _version: newVersion,
+        _user_id: user.id,
+      })
+      .then(({ data, error }) => {
         if (error) {
           toast.error('Sync failed');
           console.error('Game sync error:', error);
+          return;
+        }
+        if (data) {
+          const syncedGame = toGame(data);
+          versionRef.current = syncedGame.version;
+          setGame(syncedGame);
         }
       });
   }, [game, user, localFaction]);

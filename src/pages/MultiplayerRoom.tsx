@@ -8,6 +8,13 @@ import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { useMultiplayer } from '@/multiplayer/MultiplayerContext';
 
+function getTimeRemainingLabel(expiresAt: string): string {
+  const remainingMs = new Date(expiresAt).getTime() - Date.now();
+  if (remainingMs <= 0) return 'Expiring now';
+  const minutes = Math.ceil(remainingMs / 60000);
+  return `Expires in ${minutes}m`;
+}
+
 const MultiplayerRoom = () => {
   const navigate = useNavigate();
   const { roomId } = useParams<{ roomId: string }>();
@@ -18,6 +25,7 @@ const MultiplayerRoom = () => {
 
   const [localReady, setLocalReady] = useState(false);
   const [hasLoadedRoom, setHasLoadedRoom] = useState(false);
+  const [, setTimerTick] = useState(0);
 
   useEffect(() => {
     if (!user) {
@@ -46,6 +54,11 @@ const MultiplayerRoom = () => {
     toast.info('Room expired');
     navigate('/multiplayer/lobby');
   }, [currentRoom, hasLoadedRoom, roomId, navigate]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTimerTick(tick => tick + 1), 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // Sync local ready state from server
   useEffect(() => {
@@ -105,6 +118,9 @@ const MultiplayerRoom = () => {
       <div className="flex items-center gap-3">
         <span className="font-body text-muted-foreground text-sm">Room Code:</span>
         <span className="font-display text-primary tracking-[0.2em] text-lg">{currentRoom.room_code}</span>
+        <Badge variant="outline" className="text-xs font-display border-border text-muted-foreground">
+          {getTimeRemainingLabel(currentRoom.expires_at)}
+        </Badge>
       </div>
 
       <Card className="w-full max-w-sm bg-card border-border">

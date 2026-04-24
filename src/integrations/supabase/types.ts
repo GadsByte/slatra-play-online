@@ -137,7 +137,35 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_create_multiplayer_game: {
+        Args: {
+          _bone_player_id: string
+          _plague_player_id: string
+          _room_id: string
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      can_modify_multiplayer_game: {
+        Args: {
+          _bone_player_id: string
+          _game_id: string
+          _plague_player_id: string
+          _room_id: string
+          _user_id: string
+        }
+        Returns: boolean
+      }
+      current_multiplayer_user_id: { Args: never; Returns: string }
       delete_expired_multiplayer_rooms: { Args: never; Returns: undefined }
+      is_room_host: {
+        Args: { _room_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_room_player: {
+        Args: { _room_id: string; _user_id: string }
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

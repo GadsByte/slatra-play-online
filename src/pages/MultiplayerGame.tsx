@@ -111,6 +111,21 @@ const MultiplayerGame = () => {
     };
   }, [roomId, navigate, cleanupExpiredRooms]);
 
+  // Refetch the game row to discard a rejected optimistic update.
+  const refetchGame = useCallback(async () => {
+    if (!roomId) return;
+    const { data } = await supabase
+      .from('games')
+      .select('*')
+      .eq('room_id', roomId)
+      .maybeSingle();
+    if (data) {
+      const g = toGame(data);
+      versionRef.current = g.version;
+      setGame(g);
+    }
+  }, [roomId]);
+
   // Sync-aware dispatch
   const syncDispatch = useCallback((action: GameAction) => {
     if (!game || !user || !localFaction) return;
@@ -124,7 +139,8 @@ const MultiplayerGame = () => {
     versionRef.current = newVersion;
     setGame({ ...game, state: newState, version: newVersion });
 
-    // Persist through a protected backend function so only assigned room players can update state.
+    // Persist through a protected backend function so only the player whose
+    // turn it currently is can update state.
     supabase
       .rpc('update_multiplayer_game' as any, {
         _game_id: game.id,
@@ -134,8 +150,17 @@ const MultiplayerGame = () => {
       })
       .then(({ data, error }) => {
         if (error) {
-          toast.error('Sync failed');
-          console.error('Game sync error:', error);
+          const msg = (error as any).message || '';
+          if (msg.includes('Not your turn')) {
+            toast.error("It's not your turn.");
+          } else if (msg.includes('version conflict')) {
+            toast.error('Out of sync — refreshing.');
+          } else {
+            toast.error('Sync failed');
+            console.error('Game sync error:', error);
+          }
+          // Roll back optimistic update by refetching authoritative row.
+          refetchGame();
           return;
         }
         if (data) {
@@ -144,7 +169,7 @@ const MultiplayerGame = () => {
           setGame(syncedGame);
         }
       });
-  }, [game, user, localFaction]);
+  }, [game, user, localFaction, refetchGame]);
 
   const handleLeave = async () => {
     if (roomId && user) {

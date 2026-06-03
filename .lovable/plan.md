@@ -1,75 +1,55 @@
+## Problem
 
-# Multiplayer Setup: Alternating Hazards & Per-Player Deployment
+In multiplayer setup, Plague Order can place all hazards and both teams' units. The reducer's phase transitions and the `MultiplayerGame.tsx` dispatch gate (`state.currentPlayer === localFaction`) are already correct, so a fresh build *should* hand control to Bone after Plague's deployment + 2 hazards.
 
-## Goal
-Restructure the match setup so each player is responsible for their own units and half the hazards, instead of one player ("plague") doing everything.
+The real gap is that **nothing on the server enforces whose turn it is**. The `update_multiplayer_game` RPC only checks "is this user one of the two assigned players" — it accepts any new state from either player. That means:
 
-## New setup flow
+- A stale Plague client (cached JS from before the turn-gating change) can keep dispatching for Bone with no rejection.
+- A second tab, replayed state, or any direct RPC call from Plague's user_id will mutate the row freely.
+- The client-side gate becomes the only line of defense, which is exactly why this regressed.
 
-After the room starts, the game runs through this sequence:
+## Fix
+
+Enforce turn ownership server-side, then verify the client gate still holds.
+
+### 1. Server-side turn check (`update_multiplayer_game`)
+
+In a new migration, replace the function so it inspects the **current** stored state's `currentPlayer` and rejects if the caller isn't that faction's assigned player.
 
 ```text
-1. objective_roll           (auto / either player can roll — board state only)
-2. plague deploys 6 units   (rows 1-2)
-3. plague places 2 hazards  (rows 3-6)
-4. bone deploys 6 units     (rows 7-8)
-5. bone places 2 hazards    (rows 3-6)
-6. initiative_roll          (either player)
-7. playing                  (existing turn-by-turn flow)
+expected_player := CASE _current.state->>'currentPlayer'
+                     WHEN 'plague' THEN _current.plague_player_id
+                     WHEN 'bone'   THEN _current.bone_player_id
+                   END;
+IF _user_id <> expected_player THEN
+  RAISE EXCEPTION 'Not your turn';
+END IF;
 ```
 
-Why this order: each player commits their army before seeing the opponent's, then drops their hazards knowing where their own units sit but before the opponent's are placed (still an information asymmetry, but a fair and symmetric one). Total hazards on the board = 4, same as today. This avoids two boring "wait for opponent" gaps in a row.
+This runs in addition to the existing membership check and the optimistic `version = _version - 1` guard. Game-over and missing-currentPlayer states fall back to the existing membership check (so cleanup writes still work).
 
-Local (single-screen) play keeps the same total flow, just reordered — still feels natural with one device.
+### 2. Surface rejections in the client (`MultiplayerGame.tsx`)
 
-## Gameplay changes (`src/game/types.ts` + `src/game/gameReducer.ts`)
+When the RPC throws `Not your turn`:
+- Roll back the optimistic local update by refetching the row.
+- Show a toast: "It's not your turn."
 
-- Add `currentPlayer: Faction` semantics to setup phases. The reducer already tracks `currentPlayer`; we will set it explicitly during setup so the multiplayer turn gate works.
-- Replace `hazardsToPlace: number` with `hazardsToPlace: number` plus the active faction implied by `currentPlayer`. Each hazard-placement turn places exactly 2.
-- Rework phase transitions in the reducer:
-  - `objective_roll` → `deployment_p1` (plague), `currentPlayer = 'plague'`
-  - `deployment_p1` (after 6 plague units) → `hazard_placement` with `currentPlayer = 'plague'`, `hazardsToPlace = 2`
-  - `hazard_placement` (plague's 2 placed) → `deployment_p2`, `currentPlayer = 'bone'`
-  - `deployment_p2` (after 6 bone units) → `hazard_placement` with `currentPlayer = 'bone'`, `hazardsToPlace = 2`
-  - `hazard_placement` (bone's 2 placed) → `initiative_roll`
-- `PLACE_HAZARD` keeps row 3-6 validation; on completion of a player's 2 hazards, advance to next phase based on which faction just finished.
-- `DEPLOY_UNIT` already keys off `state.phase`; no change needed beyond the new transition target after `deployment_p1`.
-- Update setup log messages to reflect the new sequence.
+This makes a stale-cache regression visible instead of silently corrupting state.
 
-## Multiplayer turn gating (`src/components/game/SlatraGameView.tsx`)
+### 3. Audit the client gate
 
-`SlatraGameView` currently computes `isMyTurn = localFaction === undefined || state.currentPlayer === localFaction`. With `currentPlayer` set correctly during setup, this already works for hazards and deployment. Two small fixes:
+Re-confirm `SlatraGameView` and `MultiplayerGame.syncDispatch` only act when `state.currentPlayer === localFaction` for every setup phase (`objective_roll`, `deployment_p1`, `hazard_placement`, `deployment_p2`, `initiative_roll`). No code change expected — just a verification pass after the server gate is in place.
 
-- `objective_roll` and `initiative_roll`: these are board-state events that either player can trigger. Allow either side to dispatch the roll button (treat as host-or-anyone). Simplest: any player whose turn flag is `currentPlayer` may roll; we will set `currentPlayer = 'plague'` for `objective_roll` (host rolls) and to whoever has initiative-roll responsibility — keep it simple: `objective_roll` = plague rolls, `initiative_roll` = bone rolls. This guarantees both players are involved.
-- The deployment unit-class buttons and hazard banner already render based on `interactive`; no change needed beyond the gating logic above.
-
-## Multiplayer dispatch (`src/pages/MultiplayerGame.tsx`)
-
-The current `syncDispatch` blocks dispatch unless `state.currentPlayer === localFaction`. With the reducer setting `currentPlayer` correctly for every setup phase, this gate already does the right thing — no logic change needed.
-
-The status banner copy should be slightly improved to read clearly during setup ("WAITING FOR OPPONENT TO DEPLOY", "WAITING FOR OPPONENT TO PLACE HAZARDS"). Small UI polish in the banner.
-
-## Status banner copy (`src/pages/MultiplayerGame.tsx`)
-
-Replace the generic "YOUR TURN / WAITING FOR OPPONENT" with phase-aware text:
-- `objective_roll` (plague): "ROLL FOR OBJECTIVES" / "WAITING FOR OBJECTIVE ROLL"
-- `deployment_p1`/`deployment_p2`: "DEPLOY YOUR UNITS" / "OPPONENT IS DEPLOYING"
-- `hazard_placement`: "PLACE 2 HAZARDS" / "OPPONENT IS PLACING HAZARDS"
-- `initiative_roll`: "ROLL FOR INITIATIVE" / "WAITING FOR INITIATIVE ROLL"
-- `playing`: existing "YOUR TURN" / "WAITING FOR OPPONENT..."
-
-## Files to change
+## Files
 
 | File | Change |
 |------|--------|
-| `src/game/types.ts` | (no shape change expected; existing fields suffice) |
-| `src/game/gameReducer.ts` | Reorder setup phase transitions, set `currentPlayer` during setup, split hazard placement into 2+2, update logs |
-| `src/components/game/SlatraGameView.tsx` | (no change — gating already works once reducer sets `currentPlayer`) |
-| `src/pages/MultiplayerGame.tsx` | Phase-aware status banner copy |
+| `supabase/migrations/<new>.sql` | Replace `update_multiplayer_game` with turn-aware version |
+| `src/pages/MultiplayerGame.tsx` | Handle "Not your turn" rejection: toast + refetch to drop optimistic state |
 
-No database changes. Backwards-incompatible for any in-flight games (they would be mid-setup with the old phase order) — acceptable since rooms expire after 60 minutes.
+No reducer, types, or UI-layout changes. No DB schema changes.
 
 ## Out of scope
-- Reordering for local single-device play UX (it just runs through the same new sequence; both players share the screen)
-- Showing the opponent's deployments live during their turn (they will appear on the board as they happen via existing realtime sync — no extra work)
-- Bans/draft/snake order for hazards
+
+- Server-side validation of *what* each action does (e.g. "is this hazard in rows 3-6"). The reducer remains the source of truth for legal moves; the server only enforces *who* may write.
+- Reworking the setup flow further — it already alternates correctly once turn ownership is enforced.
